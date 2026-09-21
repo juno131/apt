@@ -215,7 +215,7 @@ function heatColor(v, cap) {
 }
 function heatmapSection(D, S) {
   let kind = '매매', g = 6;
-  const grans = [['3개월', 3], ['6개월', 6], ['1년', 12]];
+  const grans = [['1개월', 1], ['3개월', 3], ['6개월', 6], ['1년', 12]];
   const order = 흐름순서.filter(n => D.지역.some(r => r.이름 === n))
     .concat(D.지역.map(r => r.이름).filter(n => !흐름순서.includes(n)));
   const rows = order.map(n => D.지역.find(r => r.이름 === n)).filter(Boolean);
