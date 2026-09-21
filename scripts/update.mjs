@@ -263,7 +263,7 @@ const L = (() => { let i = shown.length - 1; if (i > 0 && shown[i] === curYm()) 
 const regions = REGIONS.map(g => {
   const b = buildIndex(store, shown, g.이름, CFG.대표단지_수 || 5);
   const chg = k => (L - k >= 0 && b.지수[L] && b.지수[L - k]) ? r1((b.지수[L] / b.지수[L - k] - 1) * 100) : null;
-  return { 이름: g.이름, ...b, 변화: { m1: chg(1), m3: chg(3), m6: chg(6), m12: chg(12) },
+  return { 이름: g.이름, ...b, 변화: { m2: chg(2), m3: chg(3), m6: chg(6), m12: chg(12), m36: chg(36), m60: chg(60) },
     현재지수: b.지수[L], 현재중위: b.중위[L], 최근거래량: b.거래량[L] };
 });
 const R = Object.fromEntries(regions.map(r => [r.이름, r]));
