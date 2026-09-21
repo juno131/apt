@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>갈아타기 모니터</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%8F%A0%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#fff; --line:#e4e8ee; --text:#1b2330; --muted:#6b7684;
+    --blue:#2563eb; --blue-soft:#eff5ff; --up:#e0342b; --down:#1d62d6; --amber:#b45309;
+    --green:#047857; --green-soft:#ecfdf5; --red-soft:#fef2f2; --amber-soft:#fffbeb;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#11151c; --card:#171d26; --line:#28303c; --text:#e8edf4; --muted:#93a0b0;
+      --blue-soft:#15243d; --green-soft:#0e2a22; --red-soft:#2d1717; --amber-soft:#2b2110; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-size:15px;line-height:1.6;
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",-apple-system,sans-serif;-webkit-text-size-adjust:100%}
+  header{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:20px 16px 16px}
+  header h1{margin:0 0 3px;font-size:19px;letter-spacing:-.4px}
+  header p{margin:0;font-size:12.5px;opacity:.85}
+  .wrap{max-width:960px;margin:0 auto;padding:14px 16px 56px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+  .card h2{margin:0 0 3px;font-size:16px}
+  .hint{font-size:12.5px;color:var(--muted);margin:0}
+  .sig{display:flex;gap:14px;align-items:center;margin-bottom:12px}
+  .sig .dot{font-size:38px;line-height:1}
+  .sig .txt b{display:block;font-size:17px;margin-bottom:2px}
+  .sig.green{background:var(--green-soft);border-color:#a7f3d0}
+  .sig.red{background:var(--red-soft);border-color:#fecaca}
+  .sig.amber{background:var(--amber-soft);border-color:#fde68a}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:14px;margin-top:10px}
+  .kv .k{color:var(--muted);white-space:nowrap}
+  .gauge{position:relative;height:26px;border-radius:13px;margin:8px 0 4px;
+    background:linear-gradient(90deg,#dbeafe,#fde68a,#bbf7d0)}
+  .gauge i{position:absolute;top:-3px;width:4px;height:32px;background:var(--text);border-radius:2px}
+  .gauge span{position:absolute;top:30px;font-size:11.5px;color:var(--muted)}
+  .relay{display:flex;flex-direction:column;gap:7px;margin-top:10px}
+  .relay .row{display:grid;grid-template-columns:112px 1fr 58px;gap:8px;align-items:center;font-size:13.5px}
+  .relay .bar{height:17px;border-radius:5px;background:#e8edf4;position:relative;overflow:hidden}
+  @media (prefers-color-scheme: dark){ .relay .bar{background:#222a36} }
+  .relay .bar i{position:absolute;top:0;bottom:0;background:var(--blue);border-radius:5px}
+  .relay .bar i.neg{background:#94a3b8}
+  .relay .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .relay .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tag{font-size:10.5px;padding:1px 6px;border-radius:9px;margin-left:4px;vertical-align:1px}
+  .tag.mine{background:#dbeafe;color:#1e40af} .tag.tgt{background:#fef3c7;color:#92400e}
+  .tag.lead{background:#ede9fe;color:#5b21b6}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+  .stat{background:var(--blue-soft);border-radius:11px;padding:11px;text-align:center}
+  .stat .l{font-size:11.5px;color:var(--muted);word-break:keep-all;line-height:1.35}
+  .stat .n{font-size:22px;font-weight:800;letter-spacing:-.6px}
+  .stat .n small{font-size:12px;font-weight:600}
+  canvas{width:100%;display:block;touch-action:pan-y}
+  .legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .legend button{border:1px solid var(--line);background:var(--card);color:var(--muted);
+    border-radius:20px;padding:4px 10px;font-size:12.5px;cursor:pointer;font-family:inherit}
+  .legend button.on{color:#fff;border-color:transparent}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th{color:var(--muted);font-size:11.5px;font-weight:600}
+  td:first-child,th:first-child{text-align:left}
+  .pos{color:var(--up);font-weight:700}.neg{color:var(--down);font-weight:700}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:6px 16px 30px;max-width:960px;margin:0 auto}
+  .err{background:var(--red-soft);border:1px solid #fecaca;color:#b91c1c;border-radius:12px;padding:14px;font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🏠 갈아타기 모니터</h1>
+  <p id="sub">자료 불러오는 중…</p>
+</header>
+<div class="wrap" id="app"></div>
+<footer>
+  자료: 국토교통부 실거래가 (공공데이터포털) · 해제된 거래와 월세는 뺐습니다.<br>
+  참고용 지표입니다. 실제 매매 결정은 대출·세금·실거주 조건과 함께 판단하세요.
+</footer>
+
+<script>
+const COLORS = ['#2563eb','#e0342b','#047857','#b45309','#7c3aed','#0891b2','#be185d','#4d7c0f','#475569','#db2777'];
+const $ = (h) => { const d = document.createElement('div'); d.innerHTML = h.trim(); return d.firstChild; };
+const num = (v, d = 2) => v == null ? '—' : Number(v).toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
+const pct = v => v == null ? '—' : (v > 0 ? '+' : '') + v + '%';
+const cls = v => v == null ? '' : v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+
+/* ---------- 선 그래프 ---------- */
+function lineChart(canvas, labels, series, opt = {}) {
+  const ctx = canvas.getContext('2d');
+  let hover = null;
+  function draw() {
+    const dpr = devicePixelRatio || 1, W = canvas.clientWidth, H = opt.height || Math.max(230, Math.round(W * 0.5));
+    canvas.width = W * dpr; canvas.height = H * dpr; canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const live = series.filter(s => s.on !== false && s.data.some(v => v != null));
+    const P = { l: 44, r: 24, t: 10, b: 26 }, w = W - P.l - P.r, h = H - P.t - P.b;
+    const vals = live.flatMap(s => s.data.filter(v => v != null));
+    if (!vals.length) { ctx.fillStyle = '#94a3b8'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('표시할 자료가 없습니다', W / 2, H / 2); return; }
+    let mn = Math.min(...vals), mx = Math.max(...vals);
+    if (mn === mx) { mn -= 1; mx += 1; }
+    const pad = (mx - mn) * 0.12; mn -= pad; mx += pad;
+    const st = getComputedStyle(document.body);
+    const X = i => P.l + (labels.length === 1 ? w / 2 : w * i / (labels.length - 1));
+    const Y = v => P.t + h - h * (v - mn) / (mx - mn);
+    ctx.strokeStyle = st.getPropertyValue('--line'); ctx.lineWidth = 1;
+    ctx.fillStyle = st.getPropertyValue('--muted'); ctx.font = '11px sans-serif'; ctx.textAlign = 'right';
+    for (let i = 0; i <= 4; i++) {
+      const v = mn + (mx - mn) * i / 4, y = Y(v);
+      ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(P.l + w, y); ctx.stroke();
+      ctx.fillText(Number(v.toFixed(opt.digits ?? 0)).toLocaleString('ko-KR'), P.l - 6, y + 4);
+    }
+    ctx.textAlign = 'center';
+    const step = Math.max(1, Math.ceil(labels.length / (W < 420 ? 4 : 8)));
+    labels.forEach((lb, i) => { if (i % step === 0 || i === labels.length - 1) ctx.fillText(lb, X(i), P.t + h + 18); });
+    live.forEach(s => {
+      ctx.strokeStyle = s.color; ctx.lineWidth = s.thick ? 3 : 2; ctx.beginPath();
+      let started = false;
+      s.data.forEach((v, i) => { if (v == null) { started = false; return; }
+        if (!started) { ctx.moveTo(X(i), Y(v)); started = true; } else ctx.lineTo(X(i), Y(v)); });
+      ctx.stroke();
+    });
+    if (hover != null) {
+      ctx.strokeStyle = st.getPropertyValue('--muted'); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(X(hover), P.t); ctx.lineTo(X(hover), P.t + h); ctx.stroke();
+      live.forEach(s => { const v = s.data[hover]; if (v == null) return;
+        ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(X(hover), Y(v), 4, 0, 7); ctx.fill(); });
+      const items = live.filter(s => s.data[hover] != null)
+        .map(s => ({ t: s.name + ' ' + Number(s.data[hover]).toLocaleString('ko-KR'), c: s.color }));
+      if (items.length) {
+        ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+        const bw = Math.max(...items.map(i2 => ctx.measureText(i2.t).width)) + 26, bh = items.length * 17 + 20;
+        let bx = X(hover) + 10; if (bx + bw > W) bx = X(hover) - bw - 10;
+        const by = Math.min(P.t + 4, H - bh - 4);
+        ctx.fillStyle = st.getPropertyValue('--card'); ctx.strokeStyle = st.getPropertyValue('--line');
+        ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = st.getPropertyValue('--text'); ctx.fillText(labels[hover], bx + 10, by + 15);
+        items.forEach((i2, k) => { ctx.fillStyle = i2.c; ctx.fillRect(bx + 10, by + 25 + k * 17, 8, 8);
+          ctx.fillStyle = st.getPropertyValue('--text'); ctx.fillText(i2.t, bx + 22, by + 33 + k * 17); });
+      }
+    }
+  }
+  const pos = e => {
+    const r = canvas.getBoundingClientRect(), x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+    const P = 44, w = r.width - P - 24;
+    hover = Math.max(0, Math.min(labels.length - 1, Math.round((x - P) / w * (labels.length - 1))));
+    draw();
+  };
+  canvas.addEventListener('mousemove', pos);
+  canvas.addEventListener('touchstart', e => { pos(e); }, { passive: true });
+  canvas.addEventListener('touchmove', e => { pos(e); }, { passive: true });
+  canvas.addEventListener('mouseleave', () => { hover = null; draw(); });
+  addEventListener('resize', draw);
+  draw();
+  return { draw, series };
+}
+function chartCard(title, hint, labels, series, opt) {
+  const card = $(`<div class="card"><h2>${title}</h2><p class="hint">${hint || ''}</p>
+    <canvas></canvas><div class="legend"></div></div>`);
+  const ch = lineChart(card.querySelector('canvas'), labels, series, opt);
+  const lg = card.querySelector('.legend');
+  series.forEach(s => {
+    const b = $(`<button class="${s.on === false ? '' : 'on'}" style="${s.on === false ? '' : 'background:' + s.color}">${s.name}</button>`);
+    b.onclick = () => { s.on = s.on === false; b.classList.toggle('on', s.on !== false);
+      b.style.background = s.on === false ? '' : s.color; ch.draw(); };
+    lg.appendChild(b);
+  });
+  return card;
+}
+
+/* ---------- 화면 만들기 ---------- */
+fetch('data.json?t=' + Date.now()).then(r => r.json()).then(render).catch(e => {
+  document.getElementById('sub').textContent = '자료를 불러오지 못했습니다';
+  document.getElementById('app').appendChild($(`<div class="err"><b>아직 자료가 없습니다.</b><br>
+    깃허브 저장소의 <b>Actions</b> 탭에서 <b>Run workflow</b>를 한 번 눌러 주세요. 처음에는 10~20분쯤 걸립니다.<br>
+    <span style="font-size:12px;opacity:.7">(${e.message})</span></div>`));
+});
+
+function render(D) {
+  document.getElementById('sub').textContent =
+    `${D.기준월.slice(0,4)}년 ${+D.기준월.slice(4)}월 거래까지 반영 · 갱신 ${D.갱신}`;
+  const app = document.getElementById('app'), S = D.신호;
+  const L = D.라벨;
+
+  /* 신호등 */
+  const kind = S.등급 === '🟢' ? 'green' : S.등급 === '🔴' ? 'red' : 'amber';
+  const who = g => g == null ? '' : Math.abs(g) < 1 ? '비슷하게 움직였어요'
+    : g > 0 ? `내 쪽이 ${g}%p 더 올랐어요` : `목표 쪽이 ${-g}%p 더 올랐어요`;
+  const card1 = $(`<div class="card">
+    <div class="sig card ${kind}" style="margin:0 0 4px">
+      <div class="dot">${S.등급}</div><div class="txt"><b>${S.문구.split(' — ')[0]}</b>
+      <span class="hint">${S.문구.split(' — ')[1] || ''}</span></div></div>
+    <div class="kv">
+      <span class="k">6개월 상승률</span><span>${S.내쪽} ${pct(S.m6)} vs ${S.목표쪽} ${pct(S.t6)} <b>${who(S.gap6)}</b></span>
+      <span class="k">12개월 상승률</span><span>${S.내쪽} ${pct(S.m12)} vs ${S.목표쪽} ${pct(S.t12)} <b>${who(S.gap12)}</b></span>
+      <span class="k">선도 지역</span><span>${(S.선도||[]).map(x=>`${x.이름} ${pct(x.m6)}`).join(',  ') || '—'} <span class="hint">(6개월)</span></span>
+    </div>
+    <p class="hint" style="margin-top:14px"><b>${S.내쪽} ÷ ${S.목표쪽} 가격 비율이 지난 ${D.기간[0].slice(0,4)}년 이후 어디쯤인지</b></p>
+    <div class="gauge"><i style="left:calc(${Math.min(98, Math.max(2, S.위치 ?? 50))}% - 2px)"></i>
+      <span style="left:0">0 · 목표 쪽이 비쌈</span><span style="right:0">내 쪽이 비쌈 · 100</span></div>
+    <p class="hint" style="margin-top:26px">지금 <b>${S.위치 ?? '—'} / 100</b> — 오른쪽(100)에 가까울수록 내 쪽이 상대적으로 비싼 때라 갈아타기에 유리합니다.
+      단지끼리 비교한 위치는 ${S.단지비위치 ?? '—'} / 100 입니다.</p>
+  </div>`);
+  app.appendChild(card1);
+
+  /* 상승 릴레이 */
+  const rel = [...D.지역].sort((a, b) => (b.변화.m6 ?? -999) - (a.변화.m6 ?? -999));
+  const mx = Math.max(1, ...rel.map(r => Math.abs(r.변화.m6 ?? 0)));
+  const tagOf = n => (S.내쪽목록 || []).includes(n) ? '<span class="tag mine">내 쪽</span>'
+    : (S.목표쪽목록 || []).includes(n) ? '<span class="tag tgt">목표</span>'
+    : (S.선도목록 || []).includes(n) ? '<span class="tag lead">선도</span>' : '';
+  const card2 = $(`<div class="card"><h2>상승 릴레이</h2>
+    <p class="hint">최근 6개월 지수 상승률 · 위에서부터 먼저 오른 지역입니다</p>
+    <div class="relay">${rel.map(r => {
+      const v = r.변화.m6 ?? 0;
+      return `<div class="row"><div class="nm">${r.이름}${tagOf(r.이름)}</div>
+        <div class="bar"><i class="${v < 0 ? 'neg' : ''}" style="width:${Math.abs(v) / mx * 100}%"></i></div>
+        <div class="v ${cls(r.변화.m6)}">${pct(r.변화.m6)}</div></div>`;
+    }).join('')}</div></div>`);
+  app.appendChild(card2);
+
+  /* 지역 지수 */
+  const base = D.기간[0];
+  const show = ['과천', '판교', '수내·정자', '야탑', '광교', '동탄'];
+  app.appendChild(chartCard('지역별 가격 지수',
+    `${base.slice(2,4)}년 ${+base.slice(4)}월 = 100 · 대표 단지들의 전용 ${D.면적[0]}~${D.면적[1]}㎡ 실거래 변화율로 계산`,
+    L, D.지역.map((r, i) => ({ name: r.이름, color: COLORS[i % COLORS.length], data: r.지수, on: show.includes(r.이름) })),
+    { digits: 0 }));
+
+  /* 비율 */
+  app.appendChild(chartCard('키맞추기 지표 (내 쪽 ÷ 목표 쪽)',
+    '올라가면 내 쪽이 상대적으로 비싸지는 중 = 갈아타기에 유리해지는 방향',
+    L, [
+      { name: `${S.내쪽} ÷ ${S.목표쪽}`, color: COLORS[0], data: S.비율, thick: true },
+      { name: `${D.두단지.내집.이름} ÷ ${D.두단지.목표.이름}`, color: COLORS[3], data: S.단지비 }
+    ], { digits: 2 }));
+
+  /* 두 단지 */
+  const T = D.두단지;
+  const card3 = $(`<div class="card"><h2>내 집 → 목표 단지</h2>
+    <p class="hint">각 단지의 최근 3개월 실거래 중위값 · ${T.내집.이름} 전용 ${T.내집.면적.join('~')}㎡ · ${T.목표.이름} 전용 ${T.목표.면적.join('~')}㎡</p>
+    <div class="stats">
+      <div class="stat"><div class="l">${T.내집.이름}</div><div class="n">${num(T.내집.가격, 1)}<small>억</small></div></div>
+      <div class="stat"><div class="l">${T.목표.이름}</div><div class="n">${num(T.목표.가격, 1)}<small>억</small></div></div>
+      <div class="stat" style="background:#eef2ff"><div class="l">필요한 추가 자금</div>
+        <div class="n" style="color:var(--blue)">${num(T.필요자금, 1)}<small>억</small></div></div>
+    </div>
+    <p class="hint">가격차 ${num(T.가격차,2)}억 + 부대비용(목표가의 ${D.부대비용_비율}%) 약 ${num(T.부대비용,2)}억
+      · 전세는 ${num(T.전세.내집,1)}억 / ${num(T.전세.목표,1)}억</p></div>`);
+  app.appendChild(card3);
+
+  app.appendChild(chartCard('두 단지 가격과 가격차', '가격차 선이 내려가면 갈아타기가 쉬워지는 중입니다', L, [
+    { name: T.내집.이름, color: COLORS[0], data: T.내집.시리즈 },
+    { name: T.목표.이름, color: COLORS[3], data: T.목표.시리즈 },
+    { name: '가격차', color: COLORS[2], data: T.가격차시리즈, thick: true }
+  ], { digits: 1 }));
+
+  /* 최근 거래 */
+  [T.내집, T.목표].forEach(c => {
+    const body = c.최근.length
+      ? `<div class="scroll"><table><tr><th>계약일</th><th>구분</th><th>금액(억)</th><th>전용</th><th>층</th></tr>
+         ${c.최근.map(t => `<tr><td>${t.날짜}</td><td style="text-align:right">${t.구분}</td>
+         <td><b>${num(t.가격)}</b></td><td>${t.면적}</td><td>${t.층}</td></tr>`).join('')}</table></div>`
+      : `<div class="err">이 조건에 맞는 거래를 찾지 못했습니다. config.json 의 동 이름·단지명·전용면적을 확인해 주세요.
+         ${c.후보.length ? '<br><br>같은 동에서 거래된 단지: ' + c.후보.join(', ') : ''}</div>`;
+    app.appendChild($(`<div class="card"><h2>${c.이름} 최근 거래</h2><p class="hint">조건에 맞는 거래만</p>${body}</div>`));
+  });
+
+  /* 지역 표 */
+  app.appendChild($(`<div class="card"><h2>지역 한눈에</h2>
+    <p class="hint">지수 상승률 · 중위 매매가는 전용 ${D.면적[0]}~${D.면적[1]}㎡ 기준</p>
+    <div class="scroll"><table>
+      <tr><th>지역</th><th>3개월</th><th>6개월</th><th>12개월</th><th>중위가(억)</th><th>전세가율</th><th>월 거래</th></tr>
+      ${D.지역.map(r => `<tr><td>${r.이름}${tagOf(r.이름)}</td>
+        <td class="${cls(r.변화.m3)}">${pct(r.변화.m3)}</td>
+        <td class="${cls(r.변화.m6)}">${pct(r.변화.m6)}</td>
+        <td class="${cls(r.변화.m12)}">${pct(r.변화.m12)}</td>
+        <td>${num(r.현재중위, 1)}</td><td>${r.전세가율 == null ? '—' : r.전세가율 + '%'}</td>
+        <td>${r.최근거래량 ?? '—'}건</td></tr>`).join('')}
+    </table></div>
+    <details style="margin-top:10px"><summary class="hint" style="cursor:pointer">지역별 대표 단지 보기</summary>
+      ${D.지역.map(r => `<p class="hint" style="margin:6px 0"><b>${r.이름}</b> · ${r.대표단지.join(', ') || '—'}</p>`).join('')}
+    </details></div>`));
+}
+</script>
+</body>
+</html>
