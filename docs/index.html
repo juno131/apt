@@ -117,10 +117,12 @@ function lineChart(canvas, labels, series, opt = {}) {
     const dpr = devicePixelRatio || 1, W = canvas.clientWidth, H = opt.height || Math.max(240, Math.round(W * 0.52));
     canvas.width = W * dpr; canvas.height = H * dpr; canvas.style.height = H + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-    const live = series.filter(s => s.on !== false && s.data.some(v => v != null));
+    const withData = series.filter(s => s.data.some(v => v != null));
+    const live = withData.filter(s => s.on !== false);
     const P = { l: 48, r: 24, t: 10, b: 28 }, w = W - P.l - P.r, h = H - P.t - P.b;
-    const vals = live.flatMap(s => s.data.filter(v => v != null));
-    if (!vals.length) { ctx.fillStyle = '#94a3b8'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+    // 축 눈금은 보이는 선만이 아니라 자료가 있는 모든 선을 기준으로 정합니다 — 켜고 끌 때마다 눈금이 바뀌지 않도록
+    const vals = withData.flatMap(s => s.data.filter(v => v != null));
+    if (!live.length || !vals.length) { ctx.fillStyle = '#94a3b8'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
       ctx.fillText('표시할 자료가 없습니다', W / 2, H / 2); return; }
     let mn = Math.min(...vals), mx = Math.max(...vals);
     if (mn === mx) { mn -= 1; mx += 1; }
@@ -140,12 +142,17 @@ function lineChart(canvas, labels, series, opt = {}) {
     labels.forEach((lb, i) => { if (i % step === 0 || i === labels.length - 1) ctx.fillText(lb, X(i), P.t + h + 19); });
     live.forEach(s => {
       ctx.strokeStyle = s.color; ctx.lineWidth = s.thick ? 3.5 : 2.5;
-      ctx.setLineDash(s.dash ? [7, 5] : []);
-      ctx.beginPath();
-      let started = false;
-      s.data.forEach((v, i) => { if (v == null) { started = false; return; }
-        if (!started) { ctx.moveTo(X(i), Y(v)); started = true; } else ctx.lineTo(X(i), Y(v)); });
-      ctx.stroke();
+      // 중간에 빈 달이 있으면 끊지 않고 점선으로 자연스럽게 이어 줍니다(완전히 가상인 선은 전부 점선)
+      let prevI = null;
+      s.data.forEach((v, i) => {
+        if (v == null) return;
+        if (prevI != null) {
+          const bridging = i - prevI > 1;
+          ctx.setLineDash((s.dash || bridging) ? [7, 5] : []);
+          ctx.beginPath(); ctx.moveTo(X(prevI), Y(s.data[prevI])); ctx.lineTo(X(i), Y(v)); ctx.stroke();
+        }
+        prevI = i;
+      });
     });
     ctx.setLineDash([]);
     if (hover != null) {
@@ -195,25 +202,35 @@ function chartCard(title, hint, labels, series, opt) {
   });
   return card;
 }
-/* 기간 탭(1개월·3개월·6개월·1년)이 달린 선 그래프 — 지역별 가격 지수용 */
+/* 기간 탭(6개월·1년·2년·3년·4년·5년)이 달린 선 그래프 — 지역별 가격 지수용 */
 function periodChart(title, hint, labels, seriesFull, opt = {}) {
-  const periods = [['1개월', 1], ['3개월', 3], ['6개월', 6], ['1년', 12]];
-  const winLen = { 1: 2, 3: 4, 6: 7, 12: 13 };
+  const periods = [['6개월', 6], ['1년', 12], ['2년', 24], ['3년', 36], ['4년', 48], ['5년', 60]];
+  const winLen = { 6: 7, 12: 13, 24: 25, 36: 37, 48: 49, 60: 61 };
   let curP = opt.default || 12;
   const on = {}; seriesFull.forEach(s => on[s.name] = s.on !== false);
   const card = $(`<div class="card"><h2>${title}</h2><p class="hint">${hint || ''}</p>
-    <div class="ptabs"></div><div class="cwrap"></div><div class="legend"></div></div>`);
+    <div class="ptabs"></div><div class="cwrap"></div><div class="legend"></div>
+    <div class="ptabs" style="margin-top:6px">
+      <button class="ptab" data-bulk="all" style="flex:1">전체 보기</button>
+      <button class="ptab" data-bulk="none" style="flex:1">모두 해제</button>
+    </div></div>`);
   const ptabs = card.querySelector('.ptabs'), cwrap = card.querySelector('.cwrap'), lg = card.querySelector('.legend');
   periods.forEach(([label, val]) => {
     const b = $(`<button class="ptab${val === curP ? ' on' : ''}">${label}</button>`);
     b.onclick = () => { curP = val; [...ptabs.children].forEach(x => x.classList.remove('on')); b.classList.add('on'); draw(); };
     ptabs.appendChild(b);
   });
-  seriesFull.forEach(s => {
+  const legendBtns = seriesFull.map(s => {
     const b = $(`<button class="${on[s.name] ? 'on' : ''}" style="${on[s.name] ? 'background:' + s.color : ''}">${s.name}</button>`);
-    b.onclick = () => { on[s.name] = !on[s.name]; b.classList.toggle('on', on[s.name]); b.style.background = on[s.name] ? s.color : ''; draw(); };
+    b.onclick = () => { on[s.name] = !on[s.name]; syncLegend(); draw(); };
     lg.appendChild(b);
+    return b;
   });
+  function syncLegend() {
+    seriesFull.forEach((s, i) => { legendBtns[i].classList.toggle('on', on[s.name]); legendBtns[i].style.background = on[s.name] ? s.color : ''; });
+  }
+  card.querySelector('[data-bulk="all"]').onclick = () => { seriesFull.forEach(s => on[s.name] = true); syncLegend(); draw(); };
+  card.querySelector('[data-bulk="none"]').onclick = () => { seriesFull.forEach(s => on[s.name] = false); syncLegend(); draw(); };
   function draw() {
     cwrap.innerHTML = '';
     const canvas = document.createElement('canvas'); cwrap.appendChild(canvas);
@@ -227,7 +244,7 @@ function periodChart(title, hint, labels, seriesFull, opt = {}) {
 }
 /* 기간 탭이 달린 상승 릴레이(막대) */
 function relaySection(regions, S) {
-  const periods = [['1개월', 'm1'], ['3개월', 'm3'], ['6개월', 'm6'], ['1년', 'm12']];
+  const periods = [['2개월', 'm2'], ['3개월', 'm3'], ['6개월', 'm6'], ['1년', 'm12'], ['3년', 'm36'], ['5년', 'm60']];
   let cur = 'm6';
   const card = $(`<div class="card"><h2>상승 릴레이</h2><p class="hint">먼저 오른 지역이 위로 옵니다</p>
     <div class="ptabs"></div><div class="relay"></div></div>`);
@@ -252,23 +269,30 @@ function relaySection(regions, S) {
 /* 키맞추기 — 단지 두 개를 골라 값 비교 (자료 없으면 점선 예시로) */
 function matchSection(D) {
   const catalog = [];
+  catalog.push({ key: '내집', label: D.두단지.내집.이름, group: '내 집 · 목표', data: D.두단지.내집.시리즈 });
+  catalog.push({ key: '목표', label: D.두단지.목표.이름, group: '내 집 · 목표', data: D.두단지.목표.시리즈 });
   D.지역.forEach(r => Object.entries(r.대표단지시리즈 || {}).forEach(([apt, data]) => {
-    catalog.push({ key: r.이름 + '·' + apt, label: `${apt} (${r.이름})`, data });
+    catalog.push({ key: r.이름 + '·' + apt, label: apt, group: r.이름, data });
   }));
-  catalog.push({ key: '내집', label: `${D.두단지.내집.이름} (내 집)`, data: D.두단지.내집.시리즈 });
-  catalog.push({ key: '목표', label: `${D.두단지.목표.이름} (목표)`, data: D.두단지.목표.시리즈 });
 
-  let sel = catalog.some(c => c.key === '내집') && catalog.some(c => c.key === '목표') ? ['내집', '목표']
-    : catalog.slice(0, 2).map(c => c.key);
+  let sel = ['내집', '목표'];
   const card = $(`<div class="card"><h2>키맞추기 지표</h2>
-    <p class="hint">두 단지를 고르면 값을 나란히 비교해 보여줍니다 (최대 2개)</p>
-    <div class="picker"></div><div class="cwrap"></div>
+    <p class="hint">단지 버튼 두 개를 고르면 값을 나란히 비교해 보여줍니다 (최대 2개, 지역별로 묶어 놓았습니다)</p>
+    <div class="pickgroups"></div><div class="cwrap"></div>
     <p class="hint warn" style="display:none">⚠ 자료가 부족한 쪽은 점선(예시)으로 표시했습니다.</p></div>`);
-  const picker = card.querySelector('.picker'), cwrap = card.querySelector('.cwrap'), note = card.querySelector('.warn');
-  catalog.forEach(c => picker.appendChild($(`<button class="pick">${c.label}</button>`)));
-  function refreshPicker() { [...picker.children].forEach((btn, i) => btn.classList.toggle('on', sel.includes(catalog[i].key))); }
-  [...picker.children].forEach((btn, i) => btn.onclick = () => {
-    const key = catalog[i].key;
+  const groups = card.querySelector('.pickgroups'), cwrap = card.querySelector('.cwrap'), note = card.querySelector('.warn');
+  const byGroup = {};
+  catalog.forEach(c => (byGroup[c.group] = byGroup[c.group] || []).push(c));
+  Object.entries(byGroup).forEach(([g, items]) => {
+    const box = $(`<div style="margin-bottom:12px"><div class="hint" style="font-weight:800;color:var(--text);margin-bottom:6px">${g}</div><div class="picker"></div></div>`);
+    const picker = box.querySelector('.picker');
+    items.forEach(c => picker.appendChild($(`<button class="pick" data-key="${c.key}">${c.label}</button>`)));
+    groups.appendChild(box);
+  });
+  const allBtns = [...groups.querySelectorAll('.pick')];
+  function refreshPicker() { allBtns.forEach(b => b.classList.toggle('on', sel.includes(b.dataset.key))); }
+  allBtns.forEach(b => b.onclick = () => {
+    const key = b.dataset.key;
     if (sel.includes(key)) sel = sel.filter(k => k !== key);
     else { if (sel.length >= 2) sel.shift(); sel.push(key); }
     refreshPicker(); draw();
