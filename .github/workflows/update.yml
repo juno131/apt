@@ -1,0 +1,33 @@
+name: 아파트 시세 자동 업데이트
+
+on:
+  schedule:
+    - cron: '0 22 * * *'      # 매일 한국시간 오전 7시
+  workflow_dispatch:           # 버튼으로 직접 실행
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: 국토부 자료 받아 계산
+        env:
+          MOLIT_KEY: ${{ secrets.MOLIT_KEY }}
+        run: node scripts/update.mjs
+      - name: 결과 저장
+        run: |
+          git config user.name "apt-monitor-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A data docs/data.json
+          git diff --staged --quiet || git commit -m "자동 업데이트 $(TZ=Asia/Seoul date +%Y-%m-%d)"
+          git push
