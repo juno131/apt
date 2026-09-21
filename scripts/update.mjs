@@ -134,8 +134,13 @@ function aggregate(data, ym) {
     for (const r of sales) (byApt[r.apt] = byApt[r.apt] || []).push(r.price);
     const 단지 = {};
     for (const [apt, ps] of Object.entries(byApt)) 단지[apt] = [Math.round(median(ps)), ps.length];
-    o.지역[g.이름] = { 건수: sales.length, 중위: sales.length ? Math.round(median(sales.map(r => r.price))) : null,
-      전세중위: rents.length ? Math.round(median(rents.map(r => r.price))) : null, 단지 };
+    const byAptJ = {};
+    for (const r of rents) (byAptJ[r.apt] = byAptJ[r.apt] || []).push(r.price);
+    const 단지전세 = {};
+    for (const [apt, ps] of Object.entries(byAptJ)) 단지전세[apt] = Math.round(median(ps));
+    o.지역[g.이름] = { 건수: sales.length, 전세건수: rents.length,
+      중위: sales.length ? Math.round(median(sales.map(r => r.price))) : null,
+      전세중위: rents.length ? Math.round(median(rents.map(r => r.price))) : null, 단지, 단지전세 };
   }
   for (const [key, c] of [['내집', CFG.내집], ['목표', CFG.목표]]) {
     const s = data.trade.filter(r => hitComplex(r, c)), j = data.rent.filter(r => hitComplex(r, c));
@@ -169,7 +174,13 @@ function buildIndex(store, months, regionName, topN) {
     for (let k = 0; k < 3; k++) { const m = monthly(y); const v = m?.단지?.[apt]?.[0]; if (v) vals.push(v); y = prevYm(y); }
     return vals.length ? mean(vals) : null;
   };
-  const idx = [], med = [], deals = [];
+  const pJ = (ym, apt) => {                               // 단지별 전세 3개월 평균
+    const vals = [];
+    let y = ym;
+    for (let k = 0; k < 3; k++) { const m = monthly(y); const v = m?.단지전세?.[apt]; if (v) vals.push(v); y = prevYm(y); }
+    return vals.length ? mean(vals) : null;
+  };
+  const idx = [], med = [], jmed = [], deals = [], jdeals = [];
   let level = 100;
   months.forEach((ym, i) => {
     if (i > 0) {
@@ -183,19 +194,24 @@ function buildIndex(store, months, regionName, topN) {
     }
     const m = monthly(ym);
     idx.push(m ? r1(level) : null);
-    // 지역 전체 중위값(3개월 평균)
-    const ms = [];
+    // 지역 전체 중위값(3개월 평균) — 매매/전세
+    const ms = [], js = [];
     let y = ym;
-    for (let k = 0; k < 3; k++) { const mm = monthly(y); if (mm?.중위) ms.push(mm.중위); y = prevYm(y); }
+    for (let k = 0; k < 3; k++) { const mm = monthly(y); if (mm?.중위) ms.push(mm.중위); if (mm?.전세중위) js.push(mm.전세중위); y = prevYm(y); }
     med.push(ms.length ? r2(eok(mean(ms))) : null);
+    jmed.push(js.length ? r2(eok(mean(js))) : null);
     deals.push(m ? m.건수 : null);
+    jdeals.push(m ? (m.전세건수 || 0) : null);
   });
   const lastM = monthly(months.at(-1));
   const 전세가율 = lastM?.중위 && lastM?.전세중위 ? r1(lastM.전세중위 / lastM.중위 * 100) : null;
-  // 대표 단지별 가격 시리즈(억) — "키맞추기" 화면에서 단지 두 개를 골라 비교할 때 씁니다
-  const 단지시리즈 = {};
-  for (const apt of top) 단지시리즈[apt] = months.map(ym => { const v = p(ym, apt); return v ? r2(eok(v)) : null; });
-  return { 지수: idx, 중위: med, 거래량: deals, 대표단지: top, 전세가율, 단지시리즈 };
+  // 대표 단지별 가격 시리즈(억) — "단지 비교" 화면에서 여러 단지를 골라 비교할 때 씁니다
+  const 단지매매 = {}, 단지전세 = {};
+  for (const apt of top) {
+    단지매매[apt] = months.map(ym => { const v = p(ym, apt); return v ? r2(eok(v)) : null; });
+    단지전세[apt] = months.map(ym => { const v = pJ(ym, apt); return v ? r2(eok(v)) : null; });
+  }
+  return { 지수: idx, 중위: med, 전세중위: jmed, 거래량: deals, 전세거래량: jdeals, 대표단지: top, 전세가율, 단지매매, 단지전세 };
 }
 function rollingComplex(store, months, key, n = 3) {
   return months.map(ym => {
@@ -262,9 +278,12 @@ const shown = months.filter(ym => store.월[ym]);
 const L = (() => { let i = shown.length - 1; if (i > 0 && shown[i] === curYm()) i--; return i; })();   // 이번 달은 신고가 덜 돼서 제외
 const regions = REGIONS.map(g => {
   const b = buildIndex(store, shown, g.이름, CFG.대표단지_수 || 5);
-  const chg = k => (L - k >= 0 && b.지수[L] && b.지수[L - k]) ? r1((b.지수[L] / b.지수[L - k] - 1) * 100) : null;
+  const chgS = (s, k) => (L - k >= 0 && s[L] && s[L - k]) ? r1((s[L] / s[L - k] - 1) * 100) : null;
+  const per = s => ({ m2: chgS(s, 2), m3: chgS(s, 3), m6: chgS(s, 6), m12: chgS(s, 12), m36: chgS(s, 36), m60: chgS(s, 60) });
+  const chg = k => chgS(b.지수, k);
   return { 이름: g.이름, ...b, 변화: { m2: chg(2), m3: chg(3), m6: chg(6), m12: chg(12), m36: chg(36), m60: chg(60) },
-    현재지수: b.지수[L], 현재중위: b.중위[L], 최근거래량: b.거래량[L] };
+    매매변화: per(b.중위), 전세변화: per(b.전세중위),
+    현재지수: b.지수[L], 현재매매: b.중위[L], 현재전세: b.전세중위[L], 현재중위: b.중위[L], 최근거래량: b.거래량[L], 최근전세량: b.전세거래량[L] };
 });
 const R = Object.fromEntries(regions.map(r => [r.이름, r]));
 const sideIdx = names => shown.map((_, i) => {
@@ -311,6 +330,7 @@ else if (posR <= 30 && gap6 <= -1) { 등급 = '🔴'; 문구 = '불리한 구간
 if (등급 !== '⚪') 문구 += ' — ' + (전환설명 || '아직 뚜렷한 차이가 없습니다');
 
 const mineS = rollingComplex(store, shown, '내집'), tgtS = rollingComplex(store, shown, '목표');
+const mineJ = rollingJeonse(store, shown, '내집'), tgtJ = rollingJeonse(store, shown, '목표');
 const recent = key => {
   const out = [];
   for (const ym of [...shown].reverse()) {
@@ -336,12 +356,16 @@ const out = {
     m3, t3, gap3, m6, t6, gap6, m12, t12, gap12,
     비율: ratio, 비율현재: ratio[L], 위치: posR, 단지비, 단지비현재: 단지비[L], 단지비위치: position(단지비),
     선도: (S.선도 || []).filter(n => R[n]).map(n => ({ 이름: n, m6: R[n].변화.m6 })) },
-  지역: regions.map(r => ({ 이름: r.이름, 지수: r.지수, 중위: r.중위, 거래량: r.거래량, 대표단지: r.대표단지,
-    대표단지시리즈: r.단지시리즈, 변화: r.변화, 현재중위: r.현재중위, 전세가율: r.전세가율, 최근거래량: r.최근거래량 })),
+  지역: regions.map(r => ({ 이름: r.이름,
+    매매시리즈: r.중위, 전세시리즈: r.전세중위,
+    매매변화: r.매매변화, 전세변화: r.전세변화, 변화: r.변화,
+    현재매매: r.현재매매, 현재전세: r.현재전세, 현재중위: r.현재중위,
+    대표단지: r.대표단지, 대표단지매매: r.단지매매, 대표단지전세: r.단지전세,
+    전세가율: r.전세가율, 최근거래량: r.최근거래량, 최근전세량: r.최근전세량 })),
   두단지: {
-    내집: { 이름: CFG.내집.이름, 가격: 내집가, 시리즈: mineS, 최근: recent('내집'), 후보: cand('내집'), 면적: CFG.내집.전용면적 },
-    목표: { 이름: CFG.목표.이름, 가격: 목표가, 시리즈: tgtS, 최근: recent('목표'), 후보: cand('목표'), 면적: CFG.목표.전용면적 },
-    전세: { 내집: rollingJeonse(store, shown, '내집')[L], 목표: rollingJeonse(store, shown, '목표')[L] },
+    내집: { 이름: CFG.내집.이름, 가격: 내집가, 시리즈: mineS, 전세시리즈: mineJ, 최근: recent('내집'), 후보: cand('내집'), 면적: CFG.내집.전용면적 },
+    목표: { 이름: CFG.목표.이름, 가격: 목표가, 시리즈: tgtS, 전세시리즈: tgtJ, 최근: recent('목표'), 후보: cand('목표'), 면적: CFG.목표.전용면적 },
+    전세: { 내집: mineJ[L], 목표: tgtJ[L] },
     가격차, 부대비용, 필요자금: (가격차 != null && 부대비용 != null) ? r2(가격차 + 부대비용) : null,
     가격차시리즈: shown.map((_, i) => (mineS[i] != null && tgtS[i] != null) ? r2(tgtS[i] - mineS[i]) : null)
   }
