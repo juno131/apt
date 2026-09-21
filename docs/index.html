@@ -203,6 +203,64 @@ function lineChart(canvas, labels, series, opt = {}) {
   return { draw, series };
 }
 
+/* ---------- 상승 흐름 히트맵 (누가 먼저 오르고 누가 뒤따르나) ---------- */
+const 흐름순서 = ['강남', '마용성', '과천', '판교', '수내·정자', '야탑', '구성남', '수지(수지구청역)', '광교', '수원 영통', '동탄'];
+function heatColor(v, cap) {
+  if (v == null) return { bg: 'transparent', fg: 'var(--muted)' };
+  const t = Math.max(-1, Math.min(1, v / cap));
+  const a = Math.abs(t);
+  const bg = t >= 0 ? `rgba(224,52,43,${(0.10 + 0.78 * a).toFixed(3)})`
+                    : `rgba(37,99,235,${(0.10 + 0.78 * a).toFixed(3)})`;
+  return { bg, fg: a > 0.45 ? '#fff' : 'var(--text)' };
+}
+function heatmapSection(D, S) {
+  let kind = '매매', g = 6;
+  const grans = [['3개월', 3], ['6개월', 6], ['1년', 12]];
+  const order = 흐름순서.filter(n => D.지역.some(r => r.이름 === n))
+    .concat(D.지역.map(r => r.이름).filter(n => !흐름순서.includes(n)));
+  const rows = order.map(n => D.지역.find(r => r.이름 === n)).filter(Boolean);
+  const card = $(`<div class="card"><h2>상승 흐름</h2>
+    <p class="hint">위(강남·서울)에서 시작한 <b style="color:var(--up)">붉은 물결</b>이 아래·오른쪽으로 번져 내려오면,
+      상승이 외곽으로 퍼지는 흐름입니다. 칸의 숫자는 그 기간 동안 오른 정도(%)예요.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0">
+      <div class="seg1"></div><div class="seg2"></div></div>
+    <div class="scroll heatwrap"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13.5px;color:var(--muted);flex-wrap:wrap">
+      <span>많이 내림</span>
+      <span style="display:inline-block;width:22px;height:16px;border-radius:3px;background:rgba(37,99,235,.85)"></span>
+      <span style="display:inline-block;width:22px;height:16px;border-radius:3px;background:rgba(37,99,235,.25)"></span>
+      <span style="display:inline-block;width:22px;height:16px;border-radius:3px;border:1px solid var(--line)"></span>
+      <span style="display:inline-block;width:22px;height:16px;border-radius:3px;background:rgba(224,52,43,.25)"></span>
+      <span style="display:inline-block;width:22px;height:16px;border-radius:3px;background:rgba(224,52,43,.85)"></span>
+      <span>많이 오름</span></div></div>`);
+  card.querySelector('.seg1').appendChild(segment([['매매', '매매'], ['전세', '전세']], kind, v => { kind = v; draw(); }));
+  card.querySelector('.seg2').appendChild(segment(grans.map(x => [x[0], x[1]]), g, v => { g = v; draw(); }));
+  const wrap = card.querySelector('.heatwrap');
+  function draw() {
+    const key = kind === '매매' ? '매매시리즈' : '전세시리즈';
+    const last = D.라벨.length - 1;
+    const idxs = []; for (let i = last; i - g >= 0; i -= g) idxs.unshift(i);
+    // 각 칸 = 그 기간 상승률(%)
+    const grid = rows.map(r => { const s = r[key] || [];
+      return idxs.map(i => (s[i] != null && s[i - g] != null && s[i - g] > 0) ? Math.round((s[i] / s[i - g] - 1) * 1000) / 10 : null); });
+    let cap = 4; grid.forEach(row => row.forEach(v => { if (v != null) cap = Math.max(cap, Math.abs(v)); }));
+    const cw = 52, nameW = 96;
+    let html = `<table style="border-collapse:separate;border-spacing:3px"><tr>
+      <th style="position:sticky;left:0;z-index:2;background:var(--bg);min-width:${nameW}px"></th>
+      ${idxs.map(i => `<th style="min-width:${cw}px;text-align:center;font-size:12.5px">${D.라벨[i]}</th>`).join('')}</tr>`;
+    rows.forEach((r, ri) => {
+      html += `<tr><td style="position:sticky;left:0;z-index:1;background:var(--card);min-width:${nameW}px;font-weight:800;font-size:14.5px">${r.이름}${tagOf(S, r.이름)}</td>`;
+      grid[ri].forEach(v => { const c = heatColor(v, cap);
+        html += `<td style="text-align:center;padding:9px 4px;border-radius:6px;background:${c.bg};color:${c.fg};font-weight:700;font-size:13px;font-variant-numeric:tabular-nums">${v == null ? '·' : (v > 0 ? '+' : '') + v}</td>`; });
+      html += `</tr>`;
+    });
+    html += `</table>`;
+    wrap.innerHTML = html;
+  }
+  draw();
+  return card;
+}
+
 /* ---------- 상승 릴레이 (매매/전세 + 기간 탭) ---------- */
 function relaySection(D, S) {
   const periods = [['2개월', 'm2'], ['3개월', 'm3'], ['6개월', 'm6'], ['1년', 'm12'], ['3년', 'm36'], ['5년', 'm60']];
@@ -366,7 +424,7 @@ fetch('data.json?t=' + Date.now()).then(r => r.json()).then(render).catch(e => {
     <span style="font-size:13px;opacity:.7">(${e.message})</span></div>`));
 });
 
-const NAV = [['sig', '신호'], ['relay', '상승릴레이'], ['ptable', '지역 가격표'], ['compare', '단지 비교'], ['recent', '최근거래']];
+const NAV = [['sig', '신호'], ['flow', '상승 흐름'], ['relay', '상승릴레이'], ['ptable', '지역 가격표'], ['compare', '단지 비교'], ['recent', '최근거래']];
 
 function render(D) {
   document.getElementById('sub').textContent =
@@ -395,6 +453,7 @@ function render(D) {
 
   const SECTIONS = {
     sig: secSig,
+    flow: heatmapSection(D, S),
     relay: relaySection(D, S),
     ptable: priceTableSection(D, S),
     compare: compareSection(D),
