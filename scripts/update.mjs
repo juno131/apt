@@ -249,13 +249,32 @@ const position = s => {
   if ((mx - mn) / ((mx + mn) / 2) < 0.04) return 50;             // 거의 안 움직였으면 '변화 없음'
   return Math.round((s[L] - mn) / (mx - mn) * 100);
 };
+const m3 = chgOf(mineIdx, 3), t3 = chgOf(tgtIdx, 3);
 const m6 = chgOf(mineIdx, 6), t6 = chgOf(tgtIdx, 6), m12 = chgOf(mineIdx, 12), t12 = chgOf(tgtIdx, 12);
+const gap3 = (m3 != null && t3 != null) ? r1(m3 - t3) : null;
 const gap6 = (m6 != null && t6 != null) ? r1(m6 - t6) : null, gap12 = (m12 != null && t12 != null) ? r1(m12 - t12) : null;
 const posR = position(ratio);
-let 등급 = '🟡', 문구 = '지켜보기 — 아직 뚜렷한 차이가 없습니다';
+
+/* 전환 조짐: 그동안(6개월)과 요즘(3개월)을 견줘 흐름이 바뀌는지 봅니다 */
+const sign = v => (v > 0 ? '+' : '') + v + '%';
+let 전환 = '변화 없음', 전환설명 = '';
+const 수치 = (gap3 != null) ? `3개월: ${mineNames.join('·')} ${sign(m3)} vs ${tgtNames.join('·')} ${sign(t3)}` : '';
+if (gap3 != null && gap6 != null) {
+  const 요즘_내쪽 = gap3 >= 1, 요즘_목표 = gap3 <= -1, 그동안_목표 = gap6 <= -1, 그동안_내쪽 = gap6 >= 1;
+  const 추세 = gap3 - gap6 / 2;      // 6개월은 기간이 2배라, 속도가 같으면 gap3 ≈ gap6/2 입니다
+  if (요즘_내쪽 && !그동안_내쪽) { 전환 = '전환 시작'; 전환설명 = `요즘은 내 쪽이 더 오르기 시작했습니다 (${수치})`; }
+  else if (요즘_내쪽 && 추세 < -1) { 전환 = '우위 약해짐'; 전환설명 = `내 쪽이 아직 앞서지만 속도가 줄고 있습니다 (${수치})`; }
+  else if (요즘_내쪽) { 전환 = '내 쪽 우위'; 전환설명 = `내 쪽이 계속 더 오르고 있습니다 (${수치})`; }
+  else if (요즘_목표 && !그동안_목표) { 전환 = '역전됨'; 전환설명 = `요즘은 목표 쪽이 더 오릅니다 (${수치})`; }
+  else if (요즘_목표 && 추세 >= 1) { 전환 = '좁혀지는 중'; 전환설명 = `목표 쪽이 앞서지만 격차가 줄고 있습니다 (${수치})`; }
+  else if (요즘_목표) { 전환 = '벌어지는 중'; 전환설명 = `목표 쪽이 더 빠르게 앞서가는 중입니다 (${수치})`; }
+  else { 전환 = '비슷'; 전환설명 = `요즘은 두 곳이 비슷하게 움직입니다 (${수치})`; }
+}
+let 등급 = '🟡', 문구 = '지켜보기';
 if (posR == null || gap6 == null) { 등급 = '⚪'; 문구 = '자료가 더 쌓여야 판단할 수 있습니다'; }
-else if ((posR >= 70 && gap6 >= 1) || (posR >= 50 && gap6 >= 5)) { 등급 = '🟢'; 문구 = '갈아타기 좋은 구간 — 내 쪽이 먼저 오르고 목표 쪽이 덜 올랐습니다'; }
-else if (posR <= 30 && gap6 <= -1) { 등급 = '🔴'; 문구 = '불리한 구간 — 목표 쪽이 상대적으로 더 비싸졌습니다'; }
+else if ((posR >= 70 && gap6 >= 1) || (posR >= 50 && gap6 >= 5)) { 등급 = '🟢'; 문구 = '갈아타기 좋은 구간'; }
+else if (posR <= 30 && gap6 <= -1) { 등급 = '🔴'; 문구 = '불리한 구간'; }
+if (등급 !== '⚪') 문구 += ' — ' + (전환설명 || '아직 뚜렷한 차이가 없습니다');
 
 const mineS = rollingComplex(store, shown, '내집'), tgtS = rollingComplex(store, shown, '목표');
 const recent = key => {
@@ -278,8 +297,9 @@ const out = {
   갱신: nowKST().toISOString().slice(0, 16).replace('T', ' ') + ' (한국시간)',
   기준월: shown[L], 기간: [shown[0], shown.at(-1)], 라벨: shown.map(ym => `${ym.slice(2, 4)}.${ym.slice(4)}`),
   면적: AREA, 부대비용_비율: CFG.부대비용_비율 || 5,
-  신호: { 등급, 문구, 내쪽: mineNames.join('·'), 목표쪽: tgtNames.join('·'),
-    내쪽목록: mineNames, 목표쪽목록: tgtNames, 선도목록: (S.선도 || []).filter(n => R[n]), m6, t6, gap6, m12, t12, gap12,
+  신호: { 등급, 문구, 전환, 전환설명, 내쪽: mineNames.join('·'), 목표쪽: tgtNames.join('·'),
+    내쪽목록: mineNames, 목표쪽목록: tgtNames, 선도목록: (S.선도 || []).filter(n => R[n]),
+    m3, t3, gap3, m6, t6, gap6, m12, t12, gap12,
     비율: ratio, 비율현재: ratio[L], 위치: posR, 단지비, 단지비현재: 단지비[L], 단지비위치: position(단지비),
     선도: (S.선도 || []).filter(n => R[n]).map(n => ({ 이름: n, m6: R[n].변화.m6 })) },
   지역: regions.map(r => ({ 이름: r.이름, 지수: r.지수, 중위: r.중위, 거래량: r.거래량, 대표단지: r.대표단지,
@@ -294,4 +314,41 @@ const out = {
 };
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, JSON.stringify(out));
-console.log(`완료: ${shown.length}개월 · 기준 ${shown[L]} · 신호 ${등급}`);
+console.log(`완료: ${shown.length}개월 · 기준 ${shown[L]} · 신호 ${등급} · 전환 ${전환}`);
+
+/* ---------- 신호가 바뀌면 알림 (깃허브가 이슈 등록 메일을 보내 줍니다) ---------- */
+const STATE = path.join(ROOT, 'data', 'state.json');
+let before = {};
+try { before = JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { before = {}; }
+fs.writeFileSync(STATE, JSON.stringify({ 등급, 전환, 기준월: shown[L] }));
+
+let 제목 = null;
+if (before.등급 !== undefined) {                                   // 처음 실행은 알리지 않음
+  if (등급 === '🟢' && before.등급 !== '🟢') 제목 = '🟢 갈아타기 구간에 들어왔습니다';
+  else if (전환 === '전환 시작' && before.전환 !== '전환 시작') 제목 = '🔄 흐름이 바뀌기 시작했습니다';
+  else if (등급 === '🔴' && before.등급 !== '🔴') 제목 = '🔴 지금은 갈아타기 불리한 구간입니다';
+}
+const TOKEN = process.env.GITHUB_TOKEN, REPO = process.env.GITHUB_REPOSITORY;
+if (제목 && TOKEN && REPO) {
+  const body = [
+    `**${문구}**`, '',
+    `| 기간 | ${mineNames.join('·')} | ${tgtNames.join('·')} | 차이 |`,
+    '|---|---|---|---|',
+    `| 3개월 | ${m3}% | ${t3}% | ${gap3}%p |`,
+    `| 6개월 | ${m6}% | ${t6}% | ${gap6}%p |`,
+    `| 12개월 | ${m12}% | ${t12}% | ${gap12}%p |`, '',
+    `가격 비율 위치: ${posR} / 100 (100에 가까울수록 갈아타기 유리)`,
+    `${CFG.내집.이름} ${내집가}억 · ${CFG.목표.이름} ${목표가}억 · 필요 자금 ${out.두단지.필요자금}억`, '',
+    `기준: ${shown[L].slice(0, 4)}년 ${+shown[L].slice(4)}월 거래까지`
+  ].join('\n');
+  try {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/issues`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: `${제목} (${shown[L].slice(2, 4)}년 ${+shown[L].slice(4)}월 기준)`, body })
+    });
+    console.log(res.ok ? `알림을 보냈습니다: ${제목}` : `알림 실패 (${res.status})`);
+  } catch (e) { console.log('알림 실패: ' + e.message); }
+} else if (제목) {
+  console.log(`알림 대상이지만 토큰이 없어 건너뜁니다: ${제목}`);
+}
