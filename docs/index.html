@@ -47,10 +47,14 @@
   .gauge span{position:absolute;top:36px;font-size:13px;color:var(--muted)}
   .ptabs{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}
   .ptab{border:1.5px solid var(--line);background:var(--card);color:var(--text);border-radius:18px;
-    padding:7px 14px;font-size:14.5px;font-weight:700;font-family:inherit;cursor:pointer}
+    padding:8px 15px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer}
   .ptab.on{background:var(--text);color:var(--card);border-color:transparent}
+  .seg{display:inline-flex;border:1.5px solid var(--blue);border-radius:20px;overflow:hidden;margin:2px 0}
+  .seg button{border:0;background:var(--card);color:var(--blue);padding:8px 20px;font-size:15.5px;
+    font-weight:800;font-family:inherit;cursor:pointer}
+  .seg button.on{background:var(--blue);color:#fff}
   .relay{display:flex;flex-direction:column;gap:9px;margin-top:6px}
-  .relay .row{display:grid;grid-template-columns:128px 1fr 62px;gap:10px;align-items:center;font-size:16px}
+  .relay .row{display:grid;grid-template-columns:128px 1fr 66px;gap:10px;align-items:center;font-size:16px}
   .relay .bar{height:19px;border-radius:6px;background:#e8edf4;position:relative;overflow:hidden}
   @media (prefers-color-scheme: dark){ .relay .bar{background:#222a36} }
   .relay .bar i{position:absolute;top:0;bottom:0;background:var(--blue);border-radius:6px}
@@ -70,7 +74,7 @@
   .legend button{border:1.5px solid var(--line);background:var(--card);color:var(--muted);
     border-radius:20px;padding:6px 12px;font-size:14.5px;cursor:pointer;font-family:inherit;font-weight:600}
   .legend button.on{color:#fff;border-color:transparent}
-  .picker{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}
+  .picker{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0}
   .pick{border:1.5px solid var(--line);background:var(--card);color:var(--text);border-radius:18px;
     padding:7px 13px;font-size:14.5px;font-weight:600;font-family:inherit;cursor:pointer}
   .pick.on{background:var(--blue);color:#fff;border-color:transparent}
@@ -106,8 +110,17 @@ const cls = v => v == null ? '' : v > 0 ? 'pos' : v < 0 ? 'neg' : '';
 const tagOf = (S, n) => (S.내쪽목록 || []).includes(n) ? '<span class="tag mine">내 쪽</span>'
   : (S.목표쪽목록 || []).includes(n) ? '<span class="tag tgt">목표</span>'
   : (S.선도목록 || []).includes(n) ? '<span class="tag lead">선도</span>' : '';
-// 자료가 없을 때 보여줄 가상의(예시) 선 — 실제 값이 아니라는 걸 점선으로 표시합니다
 function fakeSeries(len) { const out = []; let v = 100; for (let i = 0; i < len; i++) { v += (Math.sin(i / 4) + 1) * 0.55; out.push(Math.round(v * 10) / 10); } return out; }
+// 세그먼트(매매/전세 같은 2택) 버튼
+function segment(options, cur, onChange) {
+  const seg = $(`<div class="seg"></div>`);
+  options.forEach(([label, val]) => {
+    const b = $(`<button class="${val === cur ? 'on' : ''}">${label}</button>`);
+    b.onclick = () => { [...seg.children].forEach(x => x.classList.remove('on')); b.classList.add('on'); onChange(val); };
+    seg.appendChild(b);
+  });
+  return seg;
+}
 
 /* ---------- 선 그래프 ---------- */
 function lineChart(canvas, labels, series, opt = {}) {
@@ -120,8 +133,8 @@ function lineChart(canvas, labels, series, opt = {}) {
     const withData = series.filter(s => s.data.some(v => v != null));
     const live = withData.filter(s => s.on !== false);
     const P = { l: 48, r: 24, t: 10, b: 28 }, w = W - P.l - P.r, h = H - P.t - P.b;
-    // 축 눈금은 보이는 선만이 아니라 자료가 있는 모든 선을 기준으로 정합니다 — 켜고 끌 때마다 눈금이 바뀌지 않도록
-    const vals = withData.flatMap(s => s.data.filter(v => v != null));
+    // 눈금은 보이는 선만이 아니라 자료가 있는 모든 선을 기준으로 정합니다 — 켜고 끌 때 눈금이 안 바뀌도록
+    const vals = (opt.fixedAxis === false ? live : withData).flatMap(s => s.data.filter(v => v != null));
     if (!live.length || !vals.length) { ctx.fillStyle = '#94a3b8'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
       ctx.fillText('표시할 자료가 없습니다', W / 2, H / 2); return; }
     let mn = Math.min(...vals), mx = Math.max(...vals);
@@ -161,7 +174,7 @@ function lineChart(canvas, labels, series, opt = {}) {
       live.forEach(s => { const v = s.data[hover]; if (v == null) return;
         ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(X(hover), Y(v), 4.5, 0, 7); ctx.fill(); });
       const items = live.filter(s => s.data[hover] != null)
-        .map(s => ({ t: s.name + ' ' + Number(s.data[hover]).toLocaleString('ko-KR'), c: s.color }));
+        .map(s => ({ t: s.name + ' ' + Number(s.data[hover]).toLocaleString('ko-KR') + (opt.unit || ''), c: s.color }));
       if (items.length) {
         ctx.font = '13px sans-serif'; ctx.textAlign = 'left';
         const bw = Math.max(...items.map(i2 => ctx.measureText(i2.t).width)) + 28, bh = items.length * 19 + 22;
@@ -189,97 +202,96 @@ function lineChart(canvas, labels, series, opt = {}) {
   draw();
   return { draw, series };
 }
-function chartCard(title, hint, labels, series, opt) {
-  const card = $(`<div class="card"><h2>${title}</h2><p class="hint">${hint || ''}</p>
-    <canvas></canvas><div class="legend"></div></div>`);
-  const ch = lineChart(card.querySelector('canvas'), labels, series, opt);
-  const lg = card.querySelector('.legend');
-  series.forEach(s => {
-    const b = $(`<button class="${s.on === false ? '' : 'on'}" style="${s.on === false ? '' : 'background:' + s.color}">${s.name}</button>`);
-    b.onclick = () => { s.on = s.on === false; b.classList.toggle('on', s.on !== false);
-      b.style.background = s.on === false ? '' : s.color; ch.draw(); };
-    lg.appendChild(b);
-  });
-  return card;
-}
-/* 기간 탭(6개월·1년·2년·3년·4년·5년)이 달린 선 그래프 — 지역별 가격 지수용 */
-function periodChart(title, hint, labels, seriesFull, opt = {}) {
-  const periods = [['6개월', 6], ['1년', 12], ['2년', 24], ['3년', 36], ['4년', 48], ['5년', 60]];
-  const winLen = { 6: 7, 12: 13, 24: 25, 36: 37, 48: 49, 60: 61 };
-  let curP = opt.default || 12;
-  const on = {}; seriesFull.forEach(s => on[s.name] = s.on !== false);
-  const card = $(`<div class="card"><h2>${title}</h2><p class="hint">${hint || ''}</p>
-    <div class="ptabs"></div><div class="cwrap"></div><div class="legend"></div>
-    <div class="ptabs" style="margin-top:6px">
-      <button class="ptab" data-bulk="all" style="flex:1">전체 보기</button>
-      <button class="ptab" data-bulk="none" style="flex:1">모두 해제</button>
-    </div></div>`);
-  const ptabs = card.querySelector('.ptabs'), cwrap = card.querySelector('.cwrap'), lg = card.querySelector('.legend');
-  periods.forEach(([label, val]) => {
-    const b = $(`<button class="ptab${val === curP ? ' on' : ''}">${label}</button>`);
-    b.onclick = () => { curP = val; [...ptabs.children].forEach(x => x.classList.remove('on')); b.classList.add('on'); draw(); };
-    ptabs.appendChild(b);
-  });
-  const legendBtns = seriesFull.map(s => {
-    const b = $(`<button class="${on[s.name] ? 'on' : ''}" style="${on[s.name] ? 'background:' + s.color : ''}">${s.name}</button>`);
-    b.onclick = () => { on[s.name] = !on[s.name]; syncLegend(); draw(); };
-    lg.appendChild(b);
-    return b;
-  });
-  function syncLegend() {
-    seriesFull.forEach((s, i) => { legendBtns[i].classList.toggle('on', on[s.name]); legendBtns[i].style.background = on[s.name] ? s.color : ''; });
-  }
-  card.querySelector('[data-bulk="all"]').onclick = () => { seriesFull.forEach(s => on[s.name] = true); syncLegend(); draw(); };
-  card.querySelector('[data-bulk="none"]').onclick = () => { seriesFull.forEach(s => on[s.name] = false); syncLegend(); draw(); };
-  function draw() {
-    cwrap.innerHTML = '';
-    const canvas = document.createElement('canvas'); cwrap.appendChild(canvas);
-    const n = Math.min(winLen[curP], labels.length);
-    const L2 = labels.slice(-n);
-    const S2 = seriesFull.map(s => ({ ...s, data: s.data.slice(-n), on: on[s.name] }));
-    lineChart(canvas, L2, S2, opt);
-  }
-  draw();
-  return card;
-}
-/* 기간 탭이 달린 상승 릴레이(막대) */
-function relaySection(regions, S) {
+
+/* ---------- 상승 릴레이 (매매/전세 + 기간 탭) ---------- */
+function relaySection(D, S) {
   const periods = [['2개월', 'm2'], ['3개월', 'm3'], ['6개월', 'm6'], ['1년', 'm12'], ['3년', 'm36'], ['5년', 'm60']];
-  let cur = 'm6';
-  const card = $(`<div class="card"><h2>상승 릴레이</h2><p class="hint">먼저 오른 지역이 위로 옵니다</p>
+  let period = 'm6', kind = '매매';
+  const card = $(`<div class="card"><h2>상승 릴레이</h2>
+    <p class="hint">먼저 오른 지역이 위로 옵니다 · 각 기간 동안 가격이 몇 % 올랐는지</p>
+    <div class="segwrap" style="margin:10px 0 2px"></div>
     <div class="ptabs"></div><div class="relay"></div></div>`);
+  card.querySelector('.segwrap').appendChild(segment([['매매', '매매'], ['전세', '전세']], kind, v => { kind = v; draw(); }));
   const ptabs = card.querySelector('.ptabs'), body = card.querySelector('.relay');
   periods.forEach(([label, key]) => {
-    const b = $(`<button class="ptab${key === cur ? ' on' : ''}">${label}</button>`);
-    b.onclick = () => { cur = key; [...ptabs.children].forEach(x => x.classList.remove('on')); b.classList.add('on'); draw(); };
+    const b = $(`<button class="ptab${key === period ? ' on' : ''}">${label}</button>`);
+    b.onclick = () => { period = key; [...ptabs.children].forEach(x => x.classList.remove('on')); b.classList.add('on'); draw(); };
     ptabs.appendChild(b);
   });
   function draw() {
-    const rel = [...regions].sort((a, b) => (b.변화[cur] ?? -999) - (a.변화[cur] ?? -999));
-    const mx = Math.max(1, ...rel.map(r => Math.abs(r.변화[cur] ?? 0)));
-    body.innerHTML = rel.map(r => { const v = r.변화[cur] ?? 0;
+    const metric = kind === '매매' ? '매매변화' : '전세변화';
+    const rel = [...D.지역].sort((a, b) => ((b[metric] || {})[period] ?? -999) - ((a[metric] || {})[period] ?? -999));
+    const mx = Math.max(1, ...rel.map(r => Math.abs((r[metric] || {})[period] ?? 0)));
+    body.innerHTML = rel.map(r => { const v = (r[metric] || {})[period];
       return `<div class="row"><div class="nm">${r.이름}${tagOf(S, r.이름)}</div>
-        <div class="bar"><i class="${v < 0 ? 'neg' : ''}" style="width:${Math.abs(v) / mx * 100}%"></i></div>
-        <div class="v ${cls(r.변화[cur])}">${pct(r.변화[cur])}</div></div>`;
+        <div class="bar"><i class="${(v ?? 0) < 0 ? 'neg' : ''}" style="width:${Math.abs(v ?? 0) / mx * 100}%"></i></div>
+        <div class="v ${cls(v)}">${pct(v)}</div></div>`;
     }).join('');
   }
   draw();
   return card;
 }
-/* 키맞추기 — 단지 두 개를 골라 값 비교 (자료 없으면 점선 예시로) */
-function matchSection(D) {
+
+/* ---------- 지역 가격표 (매매/전세) ---------- */
+function priceTableSection(D, S) {
+  let kind = '매매';
+  const cols = [['2개월', 'm2'], ['3개월', 'm3'], ['6개월', 'm6'], ['1년', 'm12'], ['3년', 'm36'], ['5년', 'm60']];
+  const card = $(`<div class="card"><h2>지역 가격표</h2>
+    <p class="hint">각 지역 대표 단지들의 전용 ${D.면적[0]}~${D.면적[1]}㎡ 실거래 중위 가격(억)과 기간별 상승률</p>
+    <div class="segwrap" style="margin:10px 0"></div>
+    <div class="scroll"><table></table></div>
+    <p class="hint" style="margin-top:10px">※ 현재가는 최근 3개월 실거래 중위값입니다. 거래가 적은 달은 값이 튈 수 있어요.</p></div>`);
+  card.querySelector('.segwrap').appendChild(segment([['매매', '매매'], ['전세', '전세']], kind, v => { kind = v; draw(); }));
+  const table = card.querySelector('table');
+  function draw() {
+    const cur = kind === '매매' ? '현재매매' : '현재전세';
+    const chg = kind === '매매' ? '매매변화' : '전세변화';
+    const rows = [...D.지역].sort((a, b) => ((b[chg] || {}).m6 ?? -999) - ((a[chg] || {}).m6 ?? -999));
+    table.innerHTML = `<tr><th>지역</th><th>현재가<br>(억)</th>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr>` +
+      rows.map(r => `<tr><td>${r.이름}${tagOf(S, r.이름)}</td>
+        <td><b>${num(r[cur], 1)}</b></td>
+        ${cols.map(c => { const v = (r[chg] || {})[c[1]]; return `<td class="${cls(v)}">${pct(v)}</td>`; }).join('')}</tr>`).join('');
+  }
+  draw();
+  return card;
+}
+
+/* ---------- 단지 비교 (여러 단지 선택 · 매매/전세 · 실제가격/비율) ---------- */
+function compareSection(D) {
+  const T = D.두단지;
+  // 갈아타기 비용 요약(고정: 내 집 → 목표)
+  const summary = $(`<div class="card"><h2>내 집 → 목표 단지</h2>
+    <p class="hint">${T.내집.이름} 전용 ${T.내집.면적.join('~')}㎡ · ${T.목표.이름} 전용 ${T.목표.면적.join('~')}㎡ · 최근 3개월 중위값</p>
+    <div class="stats">
+      <div class="stat"><div class="l">${T.내집.이름}</div><div class="n">${num(T.내집.가격, 1)}<small>억</small></div></div>
+      <div class="stat"><div class="l">${T.목표.이름}</div><div class="n">${num(T.목표.가격, 1)}<small>억</small></div></div>
+      <div class="stat" style="background:#eef2ff"><div class="l">필요한 추가 자금</div>
+        <div class="n" style="color:var(--blue)">${num(T.필요자금, 1)}<small>억</small></div></div>
+    </div>
+    <p class="hint">가격차 ${num(T.가격차,2)}억 + 부대비용(목표가의 ${D.부대비용_비율}%) 약 ${num(T.부대비용,2)}억
+      · 전세는 ${num(T.전세.내집,1)}억 / ${num(T.전세.목표,1)}억</p></div>`);
+
+  // 비교 대상 목록: 내 집/목표 + 지역별 대표 단지 (매매·전세 시리즈 모두 보유)
   const catalog = [];
-  catalog.push({ key: '내집', label: D.두단지.내집.이름, group: '내 집 · 목표', data: D.두단지.내집.시리즈 });
-  catalog.push({ key: '목표', label: D.두단지.목표.이름, group: '내 집 · 목표', data: D.두단지.목표.시리즈 });
-  D.지역.forEach(r => Object.entries(r.대표단지시리즈 || {}).forEach(([apt, data]) => {
-    catalog.push({ key: r.이름 + '·' + apt, label: apt, group: r.이름, data });
+  catalog.push({ key: '내집', label: T.내집.이름, group: '내 집 · 목표', 매매: T.내집.시리즈, 전세: T.내집.전세시리즈 });
+  catalog.push({ key: '목표', label: T.목표.이름, group: '내 집 · 목표', 매매: T.목표.시리즈, 전세: T.목표.전세시리즈 });
+  D.지역.forEach(r => (r.대표단지 || []).forEach(apt => {
+    catalog.push({ key: r.이름 + '·' + apt, label: apt, group: r.이름,
+      매매: (r.대표단지매매 || {})[apt] || [], 전세: (r.대표단지전세 || {})[apt] || [] });
   }));
 
-  let sel = ['내집', '목표'];
-  const card = $(`<div class="card"><h2>키맞추기 지표</h2>
-    <p class="hint">단지 버튼 두 개를 고르면 값을 나란히 비교해 보여줍니다 (최대 2개, 지역별로 묶어 놓았습니다)</p>
-    <div class="pickgroups"></div><div class="cwrap"></div>
-    <p class="hint warn" style="display:none">⚠ 자료가 부족한 쪽은 점선(예시)으로 표시했습니다.</p></div>`);
+  let sel = ['내집', '목표'], kind = '매매', mode = '실제';
+  const card = $(`<div class="card"><h2>단지 비교</h2>
+    <p class="hint">단지들을 골라 값을 나란히 비교합니다. <b>비율</b>로 보면 맨 처음 고른 단지를 100으로 두고
+      나머지가 그보다 더 올랐는지(위) 덜 올랐는지(아래)를 보여줘요 — 갈아탈 타이밍 보기 좋습니다.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0">
+      <div class="seg1"></div><div class="seg2"></div>
+    </div>
+    <div class="cwrap"></div>
+    <p class="hint warn" style="display:none">⚠ 자료가 부족한 쪽은 점선(예시)으로 표시했습니다.</p>
+    <div class="pickgroups" style="margin-top:12px"></div></div>`);
+  card.querySelector('.seg1').appendChild(segment([['매매', '매매'], ['전세', '전세']], kind, v => { kind = v; draw(); }));
+  card.querySelector('.seg2').appendChild(segment([['실제 가격', '실제'], ['비율 비교', '비율']], mode, v => { mode = v; draw(); }));
   const groups = card.querySelector('.pickgroups'), cwrap = card.querySelector('.cwrap'), note = card.querySelector('.warn');
   const byGroup = {};
   catalog.forEach(c => (byGroup[c.group] = byGroup[c.group] || []).push(c));
@@ -294,43 +306,38 @@ function matchSection(D) {
   allBtns.forEach(b => b.onclick = () => {
     const key = b.dataset.key;
     if (sel.includes(key)) sel = sel.filter(k => k !== key);
-    else { if (sel.length >= 2) sel.shift(); sel.push(key); }
+    else { if (sel.length >= 4) sel.shift(); sel.push(key); }   // 한 번에 최대 4개
     refreshPicker(); draw();
   });
   refreshPicker();
   function draw() {
     cwrap.innerHTML = '';
     const canvas = document.createElement('canvas'); cwrap.appendChild(canvas);
-    const picked = catalog.filter(c => sel.includes(c.key));
+    const picked = sel.map(k => catalog.find(c => c.key === k)).filter(Boolean);
     let synth = false;
-    const series = picked.map((c, i) => {
-      const real = c.data && c.data.some(v => v != null);
-      if (!real) synth = true;
-      return { name: c.label + (real ? '' : ' (예시)'), color: COLORS[i], data: real ? c.data : fakeSeries(D.라벨.length), dash: !real };
-    });
+    let raw = picked.map(c => { const d = (kind === '매매' ? c.매매 : c.전세) || []; const real = d.some(v => v != null);
+      if (!real) synth = true; return { label: c.label, data: real ? d.slice() : fakeSeries(D.라벨.length), real }; });
+    let series, opt;
+    if (mode === '비율' && raw.length >= 1) {
+      const base = raw[0].data;
+      series = raw.map((c, i) => ({ name: c.label + (i === 0 ? ' (기준100)' : '') + (c.real ? '' : ' (예시)'),
+        color: COLORS[i], dash: !c.real,
+        data: c.data.map((v, t) => (v != null && base[t]) ? Math.round(v / base[t] * 1000) / 10 : null) }));
+      opt = { digits: 0, unit: '', fixedAxis: false };
+    } else {
+      series = raw.map((c, i) => ({ name: c.label + (c.real ? '' : ' (예시)'), color: COLORS[i], dash: !c.real, data: c.data }));
+      opt = { digits: 1, unit: '억', fixedAxis: false };
+    }
     note.style.display = synth ? 'block' : 'none';
-    lineChart(canvas, D.라벨, series, { digits: 1 });
+    lineChart(canvas, D.라벨, series, opt);
   }
   draw();
-  return card;
+  const box = document.createElement('div');
+  box.appendChild(summary); box.appendChild(card);
+  return box;
 }
-/* 두 단지 가격 + 가격차 — 자료 없으면 예시선 */
-function pairChart(D) {
-  const T = D.두단지;
-  const real1 = T.내집.시리즈.some(v => v != null), real2 = T.목표.시리즈.some(v => v != null);
-  const s1 = real1 ? T.내집.시리즈 : fakeSeries(D.라벨.length);
-  const s2 = real2 ? T.목표.시리즈 : fakeSeries(D.라벨.length).map(v => Math.round(v * 1.25 * 10) / 10);
-  const diff = (real1 && real2) ? T.가격차시리즈 : D.라벨.map((_, i) => Math.round((s2[i] - s1[i]) * 100) / 100);
-  const card = chartCard('두 단지 가격과 가격차', '가격차 선이 내려가면 갈아타기가 쉬워지는 중입니다', D.라벨, [
-    { name: T.내집.이름 + (real1 ? '' : ' (예시)'), color: COLORS[0], data: s1, dash: !real1 },
-    { name: T.목표.이름 + (real2 ? '' : ' (예시)'), color: COLORS[3], data: s2, dash: !real2 },
-    { name: '가격차', color: COLORS[2], data: diff, thick: true, dash: !(real1 && real2) }
-  ], { digits: 1 });
-  if (!real1 || !real2) card.querySelector('h2').insertAdjacentHTML('afterend',
-    '<p class="hint warn">⚠ 실제 거래를 아직 찾지 못해 점선은 예시입니다. config.json의 단지명·동 이름·전용면적을 확인해 주세요.</p>');
-  return card;
-}
-/* 최근 거래 — 매매/전세 탭 */
+
+/* ---------- 최근 거래 (매매/전세 탭) ---------- */
 function recentCard(c) {
   const sale = c.최근.filter(t => t.구분 === '매매'), jeonse = c.최근.filter(t => t.구분 === '전세');
   let cur = 'sale';
@@ -359,15 +366,12 @@ fetch('data.json?t=' + Date.now()).then(r => r.json()).then(render).catch(e => {
     <span style="font-size:13px;opacity:.7">(${e.message})</span></div>`));
 });
 
-const NAV = [
-  ['sig', '신호'], ['relay', '상승릴레이'], ['index', '지역지수'],
-  ['match', '키맞추기'], ['pair', '두단지'], ['recent', '최근거래'], ['table', '지역표']
-];
+const NAV = [['sig', '신호'], ['relay', '상승릴레이'], ['ptable', '지역 가격표'], ['compare', '단지 비교'], ['recent', '최근거래']];
 
 function render(D) {
   document.getElementById('sub').textContent =
     `${D.기준월.slice(0,4)}년 ${+D.기준월.slice(4)}월 거래까지 반영 · 갱신 ${D.갱신}`;
-  const app = document.getElementById('app'), S = D.신호, L = D.라벨;
+  const app = document.getElementById('app'), S = D.신호;
   app.innerHTML = '';
 
   /* 신호 */
@@ -386,62 +390,16 @@ function render(D) {
     <p class="hint" style="margin-top:16px"><b>${S.내쪽} ÷ ${S.목표쪽} 가격 비율이 지난 ${D.기간[0].slice(0,4)}년 이후 어디쯤인지</b></p>
     <div class="gauge"><i style="left:calc(${Math.min(98, Math.max(2, S.위치 ?? 50))}% - 2px)"></i>
       <span style="left:0">0 · 목표 쪽이 비쌈</span><span style="right:0">내 쪽이 비쌈 · 100</span></div>
-    <p class="hint" style="margin-top:30px">지금 <b>${S.위치 ?? '—'} / 100</b> — 오른쪽(100)에 가까울수록 내 쪽이 상대적으로 비싼 때라 갈아타기에 유리합니다.
-      단지끼리 비교한 위치는 ${S.단지비위치 ?? '—'} / 100 입니다.</p>
+    <p class="hint" style="margin-top:30px">지금 <b>${S.위치 ?? '—'} / 100</b> — 오른쪽(100)에 가까울수록 내 쪽이 상대적으로 비싼 때라 갈아타기에 유리합니다.</p>
   </div>`);
 
-  /* 상승 릴레이 */
-  const secRelay = relaySection(D.지역, S);
-
-  /* 지역별 가격 지수 */
-  const base = D.기간[0];
-  const SHOW = ['과천', '판교', '수내·정자', '야탑', '광교', '동탄', '강남'];
-  const secIndex = periodChart('지역별 가격 지수',
-    `${base.slice(2,4)}년 ${+base.slice(4)}월 = 100 · 대표 단지들의 전용 ${D.면적[0]}~${D.면적[1]}㎡ 실거래 변화율로 계산`,
-    L, D.지역.map((r, i) => ({ name: r.이름, color: COLORS[i % COLORS.length], data: r.지수, on: SHOW.includes(r.이름) })),
-    { digits: 0, default: 12 });
-
-  /* 키맞추기 */
-  const secMatch = matchSection(D);
-
-  /* 두 단지 */
-  const T = D.두단지;
-  const statsCard = $(`<div class="card"><h2>내 집 → 목표 단지</h2>
-    <p class="hint">각 단지의 최근 3개월 실거래 중위값 · ${T.내집.이름} 전용 ${T.내집.면적.join('~')}㎡ · ${T.목표.이름} 전용 ${T.목표.면적.join('~')}㎡</p>
-    <div class="stats">
-      <div class="stat"><div class="l">${T.내집.이름}</div><div class="n">${num(T.내집.가격, 1)}<small>억</small></div></div>
-      <div class="stat"><div class="l">${T.목표.이름}</div><div class="n">${num(T.목표.가격, 1)}<small>억</small></div></div>
-      <div class="stat" style="background:#eef2ff"><div class="l">필요한 추가 자금</div>
-        <div class="n" style="color:var(--blue)">${num(T.필요자금, 1)}<small>억</small></div></div>
-    </div>
-    <p class="hint">가격차 ${num(T.가격차,2)}억 + 부대비용(목표가의 ${D.부대비용_비율}%) 약 ${num(T.부대비용,2)}억
-      · 전세는 ${num(T.전세.내집,1)}억 / ${num(T.전세.목표,1)}억</p></div>`);
-  const secPair = document.createElement('div');
-  secPair.appendChild(statsCard);
-  secPair.appendChild(pairChart(D));
-
-  /* 최근 거래 */
-  const secRecent = document.createElement('div');
-  secRecent.appendChild(recentCard(T.내집));
-  secRecent.appendChild(recentCard(T.목표));
-
-  /* 지역 표 */
-  const secTable = $(`<div class="card"><h2>지역 한눈에</h2>
-    <p class="hint">지수 상승률 · 중위 매매가는 전용 ${D.면적[0]}~${D.면적[1]}㎡ 기준</p>
-    <div class="scroll"><table>
-      <tr><th>지역</th><th>3개월</th><th>6개월</th><th>12개월</th><th>중위가(억)</th><th>전세가율</th><th>월 거래</th></tr>
-      ${D.지역.map(r => `<tr><td>${r.이름}${tagOf(S, r.이름)}</td>
-        <td class="${cls(r.변화.m3)}">${pct(r.변화.m3)}</td>
-        <td class="${cls(r.변화.m6)}">${pct(r.변화.m6)}</td>
-        <td class="${cls(r.변화.m12)}">${pct(r.변화.m12)}</td>
-        <td>${num(r.현재중위, 1)}</td><td>${r.전세가율 == null ? '—' : r.전세가율 + '%'}</td>
-        <td>${r.최근거래량 ?? '—'}건</td></tr>`).join('')}
-    </table></div>
-    <details style="margin-top:12px"><summary class="hint" style="cursor:pointer">지역별 대표 단지 보기</summary>
-      ${D.지역.map(r => `<p class="hint" style="margin:7px 0"><b>${r.이름}</b> · ${r.대표단지.join(', ') || '—'}</p>`).join('')}
-    </details></div>`);
-
-  const SECTIONS = { sig: secSig, relay: secRelay, index: secIndex, match: secMatch, pair: secPair, recent: secRecent, table: secTable };
+  const SECTIONS = {
+    sig: secSig,
+    relay: relaySection(D, S),
+    ptable: priceTableSection(D, S),
+    compare: compareSection(D),
+    recent: (() => { const w = document.createElement('div'); w.appendChild(recentCard(D.두단지.내집)); w.appendChild(recentCard(D.두단지.목표)); return w; })()
+  };
   NAV.forEach(([id], i) => {
     const s = document.createElement('section'); s.id = 'sec-' + id;
     if (i === 0) s.classList.add('active');
@@ -457,7 +415,6 @@ function render(D) {
     app.querySelectorAll('section').forEach(s => s.classList.remove('active'));
     document.getElementById('sec-' + b.dataset.id).classList.add('active');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    // 숨겨져 있던 섹션의 그래프는 폭이 0으로 그려졌을 수 있어, 보이게 된 시점에 다시 그립니다
     requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
   });
   document.getElementById('navSlot').appendChild(nav);
