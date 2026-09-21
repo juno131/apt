@@ -192,7 +192,10 @@ function buildIndex(store, months, regionName, topN) {
   });
   const lastM = monthly(months.at(-1));
   const 전세가율 = lastM?.중위 && lastM?.전세중위 ? r1(lastM.전세중위 / lastM.중위 * 100) : null;
-  return { 지수: idx, 중위: med, 거래량: deals, 대표단지: top, 전세가율 };
+  // 대표 단지별 가격 시리즈(억) — "키맞추기" 화면에서 단지 두 개를 골라 비교할 때 씁니다
+  const 단지시리즈 = {};
+  for (const apt of top) 단지시리즈[apt] = months.map(ym => { const v = p(ym, apt); return v ? r2(eok(v)) : null; });
+  return { 지수: idx, 중위: med, 거래량: deals, 대표단지: top, 전세가율, 단지시리즈 };
 }
 function rollingComplex(store, months, key, n = 3) {
   return months.map(ym => {
@@ -260,7 +263,7 @@ const L = (() => { let i = shown.length - 1; if (i > 0 && shown[i] === curYm()) 
 const regions = REGIONS.map(g => {
   const b = buildIndex(store, shown, g.이름, CFG.대표단지_수 || 5);
   const chg = k => (L - k >= 0 && b.지수[L] && b.지수[L - k]) ? r1((b.지수[L] / b.지수[L - k] - 1) * 100) : null;
-  return { 이름: g.이름, ...b, 변화: { m3: chg(3), m6: chg(6), m12: chg(12) },
+  return { 이름: g.이름, ...b, 변화: { m1: chg(1), m3: chg(3), m6: chg(6), m12: chg(12) },
     현재지수: b.지수[L], 현재중위: b.중위[L], 최근거래량: b.거래량[L] };
 });
 const R = Object.fromEntries(regions.map(r => [r.이름, r]));
@@ -334,7 +337,7 @@ const out = {
     비율: ratio, 비율현재: ratio[L], 위치: posR, 단지비, 단지비현재: 단지비[L], 단지비위치: position(단지비),
     선도: (S.선도 || []).filter(n => R[n]).map(n => ({ 이름: n, m6: R[n].변화.m6 })) },
   지역: regions.map(r => ({ 이름: r.이름, 지수: r.지수, 중위: r.중위, 거래량: r.거래량, 대표단지: r.대표단지,
-    변화: r.변화, 현재중위: r.현재중위, 전세가율: r.전세가율, 최근거래량: r.최근거래량 })),
+    대표단지시리즈: r.단지시리즈, 변화: r.변화, 현재중위: r.현재중위, 전세가율: r.전세가율, 최근거래량: r.최근거래량 })),
   두단지: {
     내집: { 이름: CFG.내집.이름, 가격: 내집가, 시리즈: mineS, 최근: recent('내집'), 후보: cand('내집'), 면적: CFG.내집.전용면적 },
     목표: { 이름: CFG.목표.이름, 가격: 목표가, 시리즈: tgtS, 최근: recent('목표'), 후보: cand('목표'), 면적: CFG.목표.전용면적 },
