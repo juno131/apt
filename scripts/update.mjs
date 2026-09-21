@@ -11,7 +11,8 @@ const URL_TRADE = `${BASE}/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev`;
 const URL_RENT = `${BASE}/RTMSDataSvcAptRent/getRTMSDataSvcAptRent`;
 const STORE = path.join(ROOT, 'data', 'monthly.json');
 const OUT = path.join(ROOT, 'docs', 'data.json');
-const ROWS = 1000, CONCURRENCY = 6, REFRESH_MONTHS = 4;
+const ROWS = 1000, CONCURRENCY = 2, REFRESH_MONTHS = 4;   // 국토부 서버가 막지 않도록 천천히
+const BATCH_PAUSE = 400, TRIES = 4, 연속실패_한도 = 5;
 
 if (!KEY) { console.error('인증키가 없습니다. 깃허브 Secrets 에 MOLIT_KEY 를 넣어 주세요.'); process.exit(1); }
 
@@ -53,22 +54,29 @@ function parseXml(text, http) {
 }
 async function apiPage(kind, code, ym, page) {
   const url = `${kind === 'trade' ? URL_TRADE : URL_RENT}?serviceKey=${keyParam}&LAWD_CD=${code}&DEAL_YMD=${ym}&pageNo=${page}&numOfRows=${ROWS}`;
-  for (let attempt = 1; attempt <= 4; attempt++) {
+  let 마지막 = '';
+  for (let attempt = 1; attempt <= TRIES; attempt++) {
     let res, text;
-    try { res = await fetch(url); text = await res.text(); }
-    catch (e) { await sleep(1500 * attempt); continue; }
+    try {
+      res = await fetch(url, { headers: { 'User-Agent': 'apt-monitor/1.0', Accept: 'application/xml' } });
+      text = await res.text();
+    } catch (e) { 마지막 = '연결 실패: ' + e.message; await sleep(1500 * attempt); continue; }
     const p = parseXml(text, res.status);
     if (p.fatal) throw new Error(`국토부 응답 오류: ${p.msg}\n→ 인증키(MOLIT_KEY)와 두 자료(매매·전월세) 활용신청을 확인하세요.`);
     if (!p.retry) return p;
+    마지막 = `HTTP ${res.status} · ${String(text).replace(/\s+/g, ' ').slice(0, 120)}`;
     await sleep(1500 * attempt);
   }
-  throw new Error(`자료를 받지 못했습니다 (${kind} ${code} ${ym}). 잠시 뒤 다시 실행해 보세요.`);
+  const err = new Error(`${kind === 'trade' ? '매매' : '전월세'} ${code} ${ym} 실패 — ${마지막}`);
+  err.건너뛰기 = true;
+  throw err;
 }
 async function fetchMonth(codes, ym) {
   const jobs = [];
   for (const code of codes) for (const kind of ['trade', 'rent']) jobs.push({ kind, code, ym });
   const out = { trade: [], rent: [] };
   for (let i = 0; i < jobs.length; i += CONCURRENCY) {
+    if (i) await sleep(BATCH_PAUSE);
     await Promise.all(jobs.slice(i, i + CONCURRENCY).map(async j => {
       let page = 1, total = Infinity;
       while ((page - 1) * ROWS < total) {
@@ -211,13 +219,36 @@ if (fs.existsSync(STORE)) {
   catch { console.log('저장 파일을 읽지 못해 새로 받습니다.'); }
 }
 const need = months.filter(ym => !store.월[ym]).concat(months.slice(-REFRESH_MONTHS));
-const todo = [...new Set(need)].sort();
+const todo = [...new Set(need)].sort().reverse();      // 최근 달부터 (중간에 멈춰도 최신 자료는 남도록)
 console.log(`받을 달: ${todo.length}개월 (지역코드 ${CODES.length}개)`);
-let done = 0;
+let done = 0, 연속실패 = 0;
+const 실패 = [];
 for (const ym of todo) {
-  const data = await fetchMonth(CODES, ym);
-  store.월[ym] = aggregate(data, ym);
-  if (++done % 6 === 0 || done === todo.length) console.log(`  ${done}/${todo.length} (${ym})`);
+  try {
+    const data = await fetchMonth(CODES, ym);
+    store.월[ym] = aggregate(data, ym);
+    done++; 연속실패 = 0;
+  } catch (e) {
+    if (!e.건너뛰기) throw e;                       // 인증키 문제 등은 바로 멈춤
+    실패.push(ym); 연속실패++;
+    console.log(`  ⚠ ${ym} 건너뜀 — ${e.message}`);
+    if (연속실패 >= 연속실패_한도) {
+      console.log(`\n국토부 서버가 계속 막고 있어 여기서 멈춥니다. 받은 곳까지 저장하고, 다음 실행 때 이어서 받습니다.`);
+      break;
+    }
+  }
+  if ((done + 실패.length) % 6 === 0 || done + 실패.length === todo.length) {
+    console.log(`  ${done + 실패.length}/${todo.length} 진행 (받음 ${done}, 건너뜀 ${실패.length})`);
+    fs.mkdirSync(path.dirname(STORE), { recursive: true });
+    fs.writeFileSync(STORE, JSON.stringify(store));   // 중간 저장
+  }
+}
+if (실패.length) {
+  console.log(`\n⚠ ${실패.length}개월을 받지 못했습니다: ${실패.join(', ')}`);
+  console.log('   국토부 서버가 잠시 막은 것일 수 있습니다. 다음 실행 때 자동으로 다시 받습니다.');
+}
+if (!Object.keys(store.월).length) {
+  throw new Error('자료를 한 달도 받지 못했습니다. 국토부 서버가 막고 있을 수 있으니 30분~1시간 뒤 다시 실행해 보세요.');
 }
 for (const ym of Object.keys(store.월)) if (!months.includes(ym)) delete store.월[ym];   // 기간 밖은 정리
 fs.mkdirSync(path.dirname(STORE), { recursive: true });
