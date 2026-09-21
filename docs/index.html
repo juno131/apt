@@ -395,6 +395,113 @@ function compareSection(D) {
   return box;
 }
 
+/* ---------- 인근단지 동향 ---------- */
+function nearbySection(D) {
+  if (!D.인근단지 || !D.인근단지.length) {
+    return $(`<div class="card"><h2>인근단지 동향</h2><div class="err">자료를 아직 받지 못했습니다. GitHub Actions에서 Run workflow를 눌러 업데이트를 실행해 주세요.</div></div>`);
+  }
+  const wrap = document.createElement('div');
+
+  // 1) 가격 비교 그래프 카드
+  const chartCard = $(`<div class="card">
+    <h2>인근단지 가격 비교</h2>
+    <p class="hint">야탑·이매동 인근 단지들의 전용면적 기준 3개월 롤링 중위가(억)</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0">
+      <div class="seg-nc"></div>
+    </div>
+    <canvas class="nc-canvas"></canvas>
+    <div class="legend nc-legend" style="margin-top:14px"></div>
+  </div>`);
+
+  let ncKind = '매매';
+  chartCard.querySelector('.seg-nc').appendChild(
+    segment([['매매','매매'],['전세','전세']], ncKind, v => { ncKind = v; drawChart(); })
+  );
+
+  const legend = chartCard.querySelector('.nc-legend');
+  const canvas = chartCard.querySelector('.nc-canvas');
+  const 단지목록 = D.인근단지.map(c => c.이름);
+  let 선택 = new Set(단지목록);  // 처음엔 전체 표시
+
+  단지목록.forEach((name, i) => {
+    const btn = $(`<button class="legend on" style="border-color:${COLORS[i]};color:${COLORS[i]}">${name}</button>`);
+    btn.onclick = () => {
+      if (선택.has(name)) { if (선택.size > 1) { 선택.delete(name); btn.classList.remove('on'); btn.style.background=''; } }
+      else { 선택.add(name); btn.classList.add('on'); btn.style.background=COLORS[i]; btn.style.color='#fff'; }
+      drawChart();
+    };
+    btn.classList.add('on'); btn.style.background = COLORS[i]; btn.style.color = '#fff';
+    legend.appendChild(btn);
+  });
+
+  function drawChart() {
+    const series = D.인근단지.map((c, i) => ({
+      name: c.이름,
+      color: COLORS[i],
+      on: 선택.has(c.이름),
+      data: ncKind === '매매' ? c.매매시리즈 : c.전세시리즈
+    }));
+    lineChart(canvas, D.라벨, series, { digits: 1, unit: '억', fixedAxis: false });
+  }
+  drawChart();
+
+  // 2) 현재 가격 + 변화율 표 카드
+  const tableCard = $(`<div class="card">
+    <h2>인근단지 가격표</h2>
+    <p class="hint">현재가(최근 3개월 중위값)와 기간별 상승률</p>
+    <div class="segwrap2" style="margin:10px 0"></div>
+    <div class="scroll"><table class="nt"></table></div>
+  </div>`);
+  let ntKind = '매매';
+  tableCard.querySelector('.segwrap2').appendChild(
+    segment([['매매','매매'],['전세','전세']], ntKind, v => { ntKind = v; drawTable(); })
+  );
+  const nt = tableCard.querySelector('.nt');
+  function drawTable() {
+    const cur = ntKind === '매매' ? '현재매매' : '현재전세';
+    const chg = ntKind === '매매' ? '매매변화' : '전세변화';
+    const cols = [['2개월','m2'],['3개월','m3'],['6개월','m6'],['1년','m12']];
+    nt.innerHTML = `<tr><th>단지</th><th>현재가(억)</th>${cols.map(c=>`<th>${c[0]}</th>`).join('')}</tr>` +
+      D.인근단지.map(r => `<tr><td><b>${r.이름}</b></td>
+        <td>${num(r[cur], 1)}</td>
+        ${cols.map(c => { const v = (r[chg]||{})[c[1]]; return `<td class="${cls(v)}">${pct(v)}</td>`; }).join('')}</tr>`).join('');
+  }
+  drawTable();
+
+  // 3) 최근 실거래 카드 (단지별 탭)
+  const recentCard2 = $(`<div class="card">
+    <h2>인근단지 최근 실거래</h2>
+    <div class="ptabs nrt"></div>
+    <div class="seg-nrk" style="margin:8px 0"></div>
+    <div class="nrbody"></div>
+  </div>`);
+  let nrSel = D.인근단지[0].이름, nrKind = '매매';
+  const nrTabs = recentCard2.querySelector('.nrt');
+  D.인근단지.forEach(c => {
+    const b = $(`<button class="ptab${c.이름===nrSel?' on':''}">${c.이름}</button>`);
+    b.onclick = () => { nrSel = c.이름; [...nrTabs.children].forEach(x=>x.classList.remove('on')); b.classList.add('on'); drawRecent(); };
+    nrTabs.appendChild(b);
+  });
+  recentCard2.querySelector('.seg-nrk').appendChild(
+    segment([['매매','매매'],['전세','전세']], nrKind, v => { nrKind = v; drawRecent(); })
+  );
+  const nrbody = recentCard2.querySelector('.nrbody');
+  function drawRecent() {
+    const apt = D.인근단지.find(c => c.이름 === nrSel);
+    const rows = nrKind === '매매' ? (apt?.최근매매 || []) : (apt?.최근전세 || []);
+    nrbody.innerHTML = rows.length
+      ? `<div class="scroll"><table><tr><th>계약일</th><th>금액(억)</th><th>전용</th><th>층</th></tr>
+         ${rows.map(t=>`<tr><td>${t.날짜}</td><td><b>${num(t.가격)}</b></td><td>${t.면적}</td><td>${t.층}</td></tr>`).join('')}</table></div>`
+      : `<div class="err">최근 ${nrKind} 거래가 없습니다.</div>`;
+  }
+  drawRecent();
+
+  wrap.appendChild(chartCard);
+  wrap.appendChild(tableCard);
+  wrap.appendChild(recentCard2);
+  return wrap;
+}
+
 /* ---------- 최근 거래 (매매/전세 탭) ---------- */
 function recentCard(c) {
   const sale = c.최근.filter(t => t.구분 === '매매'), jeonse = c.최근.filter(t => t.구분 === '전세');
@@ -424,7 +531,7 @@ fetch('data.json?t=' + Date.now()).then(r => r.json()).then(render).catch(e => {
     <span style="font-size:13px;opacity:.7">(${e.message})</span></div>`));
 });
 
-const NAV = [['sig', '신호'], ['flow', '상승 흐름'], ['relay', '상승릴레이'], ['ptable', '지역 가격표'], ['compare', '단지 비교'], ['recent', '최근거래']];
+const NAV = [['sig', '신호'], ['flow', '상승 흐름'], ['relay', '상승릴레이'], ['ptable', '지역 가격표'], ['compare', '단지 비교'], ['nearby', '인근단지'], ['recent', '최근거래']];
 
 function render(D) {
   document.getElementById('sub').textContent =
@@ -457,6 +564,7 @@ function render(D) {
     relay: relaySection(D, S),
     ptable: priceTableSection(D, S),
     compare: compareSection(D),
+    nearby: nearbySection(D),
     recent: (() => { const w = document.createElement('div'); w.appendChild(recentCard(D.두단지.내집)); w.appendChild(recentCard(D.두단지.목표)); return w; })()
   };
   NAV.forEach(([id], i) => {
