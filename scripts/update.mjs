@@ -161,8 +161,20 @@ function aggregate(data, ym) {
     const s = data.trade.filter(r => hitComplex(r, c)), j = data.rent.filter(r => hitComplex(r, c));
     o.인근단지[c.이름] = {
       매매: s.map(r => ({ 일: r.day, 면적: r.area, 가격: r.price, 층: r.floor })),
-      전세: j.map(r => ({ 일: r.day, 면적: r.area, 가격: r.price, 층: r.floor }))
+      전세: j.map(r => ({ 일: r.day, 면적: r.area, 가격: r.price, 층: r.floor })),
+      후보: {}
     };
+    if (!s.length && !j.length) {   // 못 찾았을 때: ① 이름이 비슷한 단지(전체 동) ② 지정한 동의 단지들 — 이름 확인용
+      for (const r of [...data.trade, ...data.rent]) {
+        if (r.code !== String(c.시군구코드)) continue;
+        const 이름비슷 = norm(r.apt).includes(norm(c.단지명));
+        const 같은동 = c.동 && r.umd === c.동;
+        if (이름비슷 || 같은동) {
+          const k = (r.umd || '?') + ' · ' + r.apt;
+          o.인근단지[c.이름].후보[k] = (o.인근단지[c.이름].후보[k] || 0) + 1;
+        }
+      }
+    }
   }
   return o;
 }
@@ -384,13 +396,20 @@ const nearbyOut = NEARBY.map(c => {
     }
     return out2.slice(0, 10);
   };
+  // 못 찾은 단지: 최근 달들에서 후보 이름을 모아 보여줍니다(설정 이름 고칠 때 참고)
+  const 후보 = {};
+  for (const ym of [...shown].reverse()) {
+    const h = store.월[ym]?.인근단지?.[c.이름]?.후보 || {};
+    for (const [k, v] of Object.entries(h)) 후보[k] = (후보[k] || 0) + v;
+  }
+  const 후보목록 = Object.entries(후보).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([n]) => n);
   return {
     이름: c.이름, 전용면적: c.전용면적,
     매매시리즈, 전세시리즈,
     현재매매: 매매시리즈[L], 현재전세: 전세시리즈[L],
     매매변화: { m2: chgNear(매매시리즈, 2), m3: chgNear(매매시리즈, 3), m6: chgNear(매매시리즈, 6), m12: chgNear(매매시리즈, 12) },
     전세변화: { m2: chgNear(전세시리즈, 2), m3: chgNear(전세시리즈, 3), m6: chgNear(전세시리즈, 6), m12: chgNear(전세시리즈, 12) },
-    최근매매: recentNear('매매'), 최근전세: recentNear('전세')
+    최근매매: recentNear('매매'), 최근전세: recentNear('전세'), 후보: 후보목록
   };
 });
 
