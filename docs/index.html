@@ -489,10 +489,12 @@ function nearbySection(D) {
   function drawRecent() {
     const apt = D.인근단지.find(c => c.이름 === nrSel);
     const rows = nrKind === '매매' ? (apt?.최근매매 || []) : (apt?.최근전세 || []);
+    const 후보 = apt?.후보 || [];
     nrbody.innerHTML = rows.length
       ? `<div class="scroll"><table><tr><th>계약일</th><th>금액(억)</th><th>전용</th><th>층</th></tr>
          ${rows.map(t=>`<tr><td>${t.날짜}</td><td><b>${num(t.가격)}</b></td><td>${t.면적}</td><td>${t.층}</td></tr>`).join('')}</table></div>`
-      : `<div class="err">최근 ${nrKind} 거래가 없습니다.</div>`;
+      : `<div class="err">이 조건에 맞는 ${nrKind} 거래를 찾지 못했습니다.
+         ${후보.length ? '<br><br><b>이 근처에서 실제 거래된 단지 이름들</b> (설정을 이 이름에 맞게 고치면 됩니다):<br>' + 후보.join(', ') : ''}</div>`;
   }
   drawRecent();
 
