@@ -386,7 +386,11 @@ const 단지비 = shown.map((_, i) => (mineS[i] && tgtS[i]) ? r2(mineS[i] / tgtS
 const nearbyOut = NEARBY.map(c => {
   const 매매시리즈 = rollingNearby(store, shown, c.이름, '매매');
   const 전세시리즈 = rollingNearby(store, shown, c.이름, '전세');
-  const chgNear = (s, k) => (L - k >= 0 && s[L] && s[L - k]) ? r1((s[L] / s[L - k] - 1) * 100) : null;
+  // 거래가 드문 단지는 최근 몇 달에 값이 없을 수 있어, "값이 있는 가장 최근 시점"을 기준으로 잡습니다
+  const 마지막값 = s => { for (let i = L; i >= 0; i--) if (s[i] != null) return i; return -1; };
+  const chgFrom = (s, a, k) => (a - k >= 0 && s[a] && s[a - k]) ? r1((s[a] / s[a - k] - 1) * 100) : null;
+  const aM = 마지막값(매매시리즈), aJ = 마지막값(전세시리즈);
+  const chgNear = (s, k) => chgFrom(s, s === 매매시리즈 ? aM : aJ, k);
   const recentNear = kind => {
     const out2 = [];
     for (const ym of [...shown].reverse()) {
@@ -406,7 +410,7 @@ const nearbyOut = NEARBY.map(c => {
   return {
     이름: c.이름, 전용면적: c.전용면적,
     매매시리즈, 전세시리즈,
-    현재매매: 매매시리즈[L], 현재전세: 전세시리즈[L],
+    현재매매: aM >= 0 ? 매매시리즈[aM] : null, 현재전세: aJ >= 0 ? 전세시리즈[aJ] : null,
     매매변화: { m2: chgNear(매매시리즈, 2), m3: chgNear(매매시리즈, 3), m6: chgNear(매매시리즈, 6), m12: chgNear(매매시리즈, 12) },
     전세변화: { m2: chgNear(전세시리즈, 2), m3: chgNear(전세시리즈, 3), m6: chgNear(전세시리즈, 6), m12: chgNear(전세시리즈, 12) },
     최근매매: recentNear('매매'), 최근전세: recentNear('전세'), 후보: 후보목록
